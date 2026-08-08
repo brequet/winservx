@@ -1,0 +1,11 @@
+# Package manager lockfiles
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Build & generated directories
+dist
+build
+.svelte-kit
+src-tauri
+node_modules
