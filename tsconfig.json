@@ -13,6 +13,11 @@
 		"isolatedModules": true,
 		"noEmit": true,
 
+		/* Paths */
+		"paths": {
+			"$lib/*": ["./src/lib/*"]
+		},
+
 		/* Linting */
 		"strict": true,
 		"noUnusedLocals": true,

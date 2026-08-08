@@ -1,10 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system">
 	<head>
 		<meta charset="UTF-8" />
-		<link rel="stylesheet" href="/src/styles.css" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>Tauri App</title>
+		<title>WinServX</title>
+		<script>
+			(function () {
+				var theme = 'system';
+				try {
+					var stored = localStorage.getItem('winservx.theme');
+					if (stored === 'light' || stored === 'dark' || stored === 'system') {
+						theme = stored;
+					}
+				} catch (e) {}
+				document.documentElement.dataset.theme = theme;
+			})();
+		</script>
+		<link rel="stylesheet" href="/src/styles.css" />
 		<script type="module" src="/src/main.ts" defer></script>
 	</head>
 

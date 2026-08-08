@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
@@ -7,6 +8,11 @@ const host = process.env.TAURI_DEV_HOST;
 // https://vite.dev/config/
 export default defineConfig(async () => ({
 	plugins: [svelte()],
+	resolve: {
+		alias: {
+			$lib: fileURLToPath(new URL('./src/lib', import.meta.url))
+		}
+	},
 
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//
