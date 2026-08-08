@@ -1,18 +1,25 @@
 use std::sync::Arc;
 
 use tauri::State;
+use tracing::{debug, warn};
 
 use crate::{
+    domain::error::ServiceError,
     domain::service::ServiceInfo,
-    scm::ScmError,
     state::AppState,
 };
 
 #[tauri::command]
 #[specta::specta]
-pub async fn get_services(state: State<'_, AppState>) -> Result<Vec<ServiceInfo>, ScmError> {
+pub async fn get_services(state: State<'_, AppState>) -> Result<Vec<ServiceInfo>, ServiceError> {
+    debug!(command = "get_services", "command started");
     let repository = Arc::clone(&state.repository);
-    tauri::async_runtime::spawn_blocking(move || repository.list_services())
+    let result = tauri::async_runtime::spawn_blocking(move || repository.list_services())
         .await
-        .map_err(|e| ScmError::Internal(format!("background task panicked: {e}")))?
+        .map_err(|e| ServiceError::Internal { message: format!("background task panicked: {e}") })
+        .and_then(|r| r);
+    if let Err(e) = &result {
+        warn!(command = "get_services", error = %e, "command failed");
+    }
+    result
 }
