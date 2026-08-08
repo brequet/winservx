@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
+	import { commands, type GreetResponse } from './lib/tauri/bindings';
 
 	let name = $state('');
 	let greetMsg = $state('Press the button');
 
+	let debugRes: GreetResponse | null = $state(null);
+
 	async function greet(e: SubmitEvent) {
 		e.preventDefault();
-		// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-		greetMsg = await invoke('greet', { name });
+		debugRes = await commands.greet(name);
+		greetMsg = debugRes.message;
 	}
 </script>
 
@@ -32,3 +34,7 @@
 	<button type="submit">Greet</button>
 </form>
 <p>{greetMsg}</p>
+
+{#if debugRes !== null}
+	<pre>{JSON.stringify(debugRes)}</pre>
+{/if}
