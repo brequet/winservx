@@ -1,23 +1,11 @@
-import { commands, type ServiceError, type ServiceInfo } from '../tauri/bindings';
+import { commands, type ServiceInfo } from '../tauri/bindings';
+import { err, ok, type Result } from '../result';
+import { normalizeError, type ApiError } from './errors';
 
-export async function loadServices(): Promise<ServiceInfo[]> {
-	return commands.getServices();
-}
-
-function isServiceError(e: unknown): e is ServiceError {
-	if (typeof e !== 'object' || e === null) return false;
-	const kind = (e as { kind?: unknown }).kind;
-	return kind === 'windows' || kind === 'internal';
-}
-
-export function parseServiceError(e: unknown): string {
-	if (isServiceError(e)) {
-		if (e.kind === 'windows') {
-			return `Windows error ${e.code} (0x${e.code.toString(16).toUpperCase()}): ${e.message}`;
-		}
-		return e.message;
+export async function loadServices(): Promise<Result<ServiceInfo[], ApiError>> {
+	try {
+		return ok(await commands.getServices());
+	} catch (e) {
+		return err(normalizeError(e));
 	}
-	if (typeof e === 'string') return e;
-	if (e instanceof Error) return e.message;
-	return 'Unknown error';
 }

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { type ServiceInfo } from './lib/tauri/bindings';
-	import { loadServices, parseServiceError } from './lib/api/services';
+	import { formatApiError } from './lib/api/errors';
+	import { loadServices } from './lib/api/services';
 	import ServiceTable from './lib/components/ServiceTable.svelte';
 
 	let services: ServiceInfo[] = $state([]);
@@ -11,13 +12,13 @@
 	async function load() {
 		loading = true;
 		error = null;
-		try {
-			services = await loadServices();
-		} catch (e) {
-			error = parseServiceError(e);
-		} finally {
-			loading = false;
+		const result = await loadServices();
+		if (result.ok) {
+			services = result.value;
+		} else {
+			error = formatApiError(result.error);
 		}
+		loading = false;
 	}
 
 	onMount(load);
