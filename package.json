@@ -10,9 +10,11 @@
 		"tauri": "tauri",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
-		"lint": "prettier --check . && eslint .",
+		"lint:prettier": "prettier --check .",
+		"lint:eslint": "eslint .",
+		"lint": "run-p lint:*",
 		"format": "prettier --write .",
-		"validate": "pnpm run check && pnpm run lint"
+		"validate": "run-p check lint:*"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2",
@@ -29,6 +31,7 @@
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.22.0",
 		"globals": "^17.9.0",
+		"npm-run-all2": "^9.0.3",
 		"prettier": "^3.9.6",
 		"prettier-plugin-svelte": "^4.1.1",
 		"svelte-check": "^4.7.5",
