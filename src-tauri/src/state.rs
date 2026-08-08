@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use tracing::error;
 
+use crate::domain::actions::ActionService;
 use crate::domain::repository::DynServiceRepository;
 use crate::liveness::cache::ServiceCache;
 use crate::liveness::events::LivenessEvent;
@@ -11,6 +12,7 @@ use crate::liveness::service::{EventSink, LivenessHandle};
 pub struct AppState {
     pub repository: DynServiceRepository,
     pub cache: Arc<RwLock<ServiceCache>>,
+    pub actions: Arc<ActionService>,
     pub _liveness: LivenessHandle,
 }
 

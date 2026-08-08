@@ -1,15 +1,18 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import type { ServiceAction } from '$lib/api/services';
 	import type {
 		ServiceConfigChanged,
 		ServiceInfo,
 		ServiceStatusChanged,
 		ServicesChanged
 	} from '$lib/tauri/bindings';
-	import { loadServices } from '$lib/api/services';
+	import { loadServices, runServiceAction } from '$lib/api/services';
 	import { subscribeToLiveness } from '$lib/api/liveness';
 	import { formatApiError } from '$lib/api/errors';
 	import { isErr } from '$lib/result';
+	import type { QueueItem } from '$lib/queue';
+	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	import ServiceTable from '$lib/components/ServiceTable.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
 
@@ -18,7 +21,43 @@
 	let error: string | null = $state(null);
 	let query = $state('');
 	let searchInput: HTMLInputElement | undefined = $state();
+	let queue: QueueItem[] = $state([]);
+	let nextQueueId = $state(1);
 	let unlisteners: Array<() => void> = [];
+
+	/** Actions currently in flight, per service name — drives the row spinners. */
+	const pending = $derived(
+		new Map(
+			queue
+				.filter((item) => item.status === 'inFlight')
+				.map((item) => [item.serviceName, item.action])
+		)
+	);
+
+	/** Success items clear automatically after a short delay; failures persist until dismissed. */
+	const SUCCESS_CLEAR_MS = 2000;
+
+	function runAction(name: string, action: ServiceAction) {
+		const id = nextQueueId++;
+		queue = [{ id, serviceName: name, action, status: 'inFlight' }, ...queue];
+		runServiceAction(name, action).then((result) => {
+			if (isErr(result)) {
+				settle(id, { status: 'failed', error: formatApiError(result.error) });
+			} else {
+				settle(id, { status: 'success' });
+				setTimeout(() => dismiss(id), SUCCESS_CLEAR_MS);
+			}
+		});
+	}
+
+	/** Applies a patch to a queue item; immutable replacement so reactivity fires. */
+	function settle(id: number, patch: Partial<QueueItem>) {
+		queue = queue.map((item) => (item.id === id ? { ...item, ...patch } : item));
+	}
+
+	function dismiss(id: number) {
+		queue = queue.filter((item) => item.id !== id);
+	}
 
 	const filtered = $derived(
 		query.trim() === ''
@@ -140,9 +179,11 @@
 			{services.length === 0 ? 'no services found' : 'no services match the search'}
 		</p>
 	{:else}
-		<ServiceTable services={filtered} />
+		<ServiceTable services={filtered} {pending} onAction={runAction} />
 	{/if}
 </main>
+
+<ActionQueue items={queue} onDismiss={dismiss} />
 
 <style>
 	.page {

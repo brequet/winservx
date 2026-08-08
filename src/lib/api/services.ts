@@ -2,9 +2,30 @@ import { commands, type ServiceInfo } from '../tauri/bindings';
 import { err, ok, type Result } from '../result';
 import { normalizeError, type ApiError } from './errors';
 
+/** The actions a row can request from the backend. */
+export type ServiceAction = 'start' | 'stop' | 'restart' | 'forceStart';
+
+const ACTION_COMMAND: Record<ServiceAction, (name: string) => Promise<null>> = {
+	start: (name) => commands.startService(name),
+	stop: (name) => commands.stopService(name),
+	restart: (name) => commands.restartService(name),
+	forceStart: (name) => commands.forceStartService(name)
+};
+
 export async function loadServices(): Promise<Result<ServiceInfo[], ApiError>> {
 	try {
 		return ok(await commands.getServices());
+	} catch (e) {
+		return err(normalizeError(e));
+	}
+}
+
+export async function runServiceAction(
+	name: string,
+	action: ServiceAction
+): Promise<Result<null, ApiError>> {
+	try {
+		return ok(await ACTION_COMMAND[action](name));
 	} catch (e) {
 		return err(normalizeError(e));
 	}

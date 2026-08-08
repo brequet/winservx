@@ -9,6 +9,18 @@ pub enum ServiceError {
     Windows { code: u32, message: String },
     #[error("internal error: {message}")]
     Internal { message: String },
+    #[error("timed out waiting for service '{service}' to stop")]
+    Timeout { service: String },
+}
+
+impl ServiceError {
+    /// Windows error 1060 (`ERROR_SERVICE_DOES_NOT_EXIST`).
+    pub fn service_not_found(name: &str) -> Self {
+        ServiceError::Windows {
+            code: 1060,
+            message: format!("the specified service does not exist: '{name}'"),
+        }
+    }
 }
 
 impl From<::windows::core::Error> for ServiceError {
@@ -39,6 +51,15 @@ mod tests {
     fn serializes_internal_error() {
         let value = serde_json::to_value(ServiceError::Internal { message: "boom".into() }).unwrap();
         assert_eq!(value, serde_json::json!({ "kind": "internal", "message": "boom" }));
+    }
+
+    #[test]
+    fn serializes_timeout_error() {
+        let value = serde_json::to_value(ServiceError::Timeout {
+            service: "redis".into(),
+        })
+        .unwrap();
+        assert_eq!(value, serde_json::json!({ "kind": "timeout", "service": "redis" }));
     }
 
     #[test]

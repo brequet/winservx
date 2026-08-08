@@ -9,18 +9,21 @@ use windows::Win32::Foundation::{
     ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA, ERROR_SERVICE_DOES_NOT_EXIST,
 };
 use windows::Win32::System::Services::{
-    CloseServiceHandle, ENUM_SERVICE_STATUS_PROCESSW, ENUM_SERVICE_TYPE, EnumServicesStatusExW,
-    OpenSCManagerW, OpenServiceW, PSC_NOTIFICATION_REGISTRATION, QUERY_SERVICE_CONFIGW,
-    QueryServiceConfigW, QueryServiceStatusEx, SC_ENUM_PROCESS_INFO, SC_EVENT_DATABASE_CHANGE,
-    SC_EVENT_PROPERTY_CHANGE, SC_EVENT_STATUS_CHANGE, SC_EVENT_TYPE, SC_HANDLE,
-    SC_MANAGER_ENUMERATE_SERVICE, SC_STATUS_PROCESS_INFO,
-    SERVICE_AUTO_START, SERVICE_BOOT_START, SERVICE_CONTINUE_PENDING, SERVICE_DEMAND_START,
-    SERVICE_DISABLED, SERVICE_FILE_SYSTEM_DRIVER, SERVICE_KERNEL_DRIVER, SERVICE_PAUSE_PENDING,
-    SERVICE_PAUSED, SERVICE_QUERY_CONFIG, SERVICE_QUERY_STATUS, SERVICE_RECOGNIZER_DRIVER,
-    SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_START_TYPE, SERVICE_STATE_ALL,
-    SERVICE_STATUS_CURRENT_STATE, SERVICE_STATUS_PROCESS, SERVICE_STOP_PENDING, SERVICE_STOPPED,
-    SERVICE_SYSTEM_START, SERVICE_WIN32_OWN_PROCESS, SERVICE_WIN32_SHARE_PROCESS,
-    SubscribeServiceChangeNotifications, UnsubscribeServiceChangeNotifications,
+    ChangeServiceConfigW, CloseServiceHandle, ControlService, ENUM_SERVICE_STATUS_PROCESSW,
+    ENUM_SERVICE_TYPE, EnumServicesStatusExW, OpenSCManagerW, OpenServiceW,
+    PSC_NOTIFICATION_REGISTRATION, QUERY_SERVICE_CONFIGW, QueryServiceConfigW,
+    QueryServiceStatusEx, SC_ENUM_PROCESS_INFO, SC_EVENT_DATABASE_CHANGE, SC_EVENT_PROPERTY_CHANGE,
+    SC_EVENT_STATUS_CHANGE, SC_EVENT_TYPE, SC_HANDLE, SC_MANAGER_CONNECT,
+    SC_MANAGER_ENUMERATE_SERVICE, SC_STATUS_PROCESS_INFO, SERVICE_AUTO_START, SERVICE_BOOT_START,
+    SERVICE_CHANGE_CONFIG, SERVICE_CONTINUE_PENDING, SERVICE_CONTROL_STOP, SERVICE_DEMAND_START,
+    SERVICE_DISABLED, SERVICE_ERROR, SERVICE_FILE_SYSTEM_DRIVER, SERVICE_KERNEL_DRIVER,
+    SERVICE_NO_CHANGE, SERVICE_PAUSE_PENDING, SERVICE_PAUSED, SERVICE_QUERY_CONFIG,
+    SERVICE_QUERY_STATUS, SERVICE_RECOGNIZER_DRIVER, SERVICE_RUNNING, SERVICE_START,
+    SERVICE_START_PENDING, SERVICE_START_TYPE, SERVICE_STATE_ALL, SERVICE_STATUS,
+    SERVICE_STATUS_CURRENT_STATE, SERVICE_STATUS_PROCESS, SERVICE_STOP, SERVICE_STOP_PENDING,
+    SERVICE_STOPPED, SERVICE_SYSTEM_START, SERVICE_WIN32_OWN_PROCESS,
+    SERVICE_WIN32_SHARE_PROCESS, StartServiceW, SubscribeServiceChangeNotifications,
+    UnsubscribeServiceChangeNotifications,
 };
 use windows::core::{HRESULT, PCWSTR};
 
@@ -106,11 +109,68 @@ impl ServiceRepository for WindowsServiceRepository {
             start_type: map_start_type(config.dwStartType),
         }))
     }
+
+    fn start_service(&self, name: &str) -> Result<(), ServiceError> {
+        let manager = open_manager()?;
+        let _guard = ScHandle(manager);
+        let service = open_service(manager, name, SERVICE_START)?;
+        let _service_guard = ScHandle(service);
+        unsafe { StartServiceW(service, None) }?;
+        Ok(())
+    }
+
+    fn stop_service(&self, name: &str) -> Result<(), ServiceError> {
+        let manager = open_manager()?;
+        let _guard = ScHandle(manager);
+        let service = open_service(manager, name, SERVICE_STOP)?;
+        let _service_guard = ScHandle(service);
+        let mut status = SERVICE_STATUS::default();
+        unsafe { ControlService(service, SERVICE_CONTROL_STOP, &mut status) }?;
+        Ok(())
+    }
+
+    fn set_start_type(&self, name: &str, start_type: ServiceStartType) -> Result<(), ServiceError> {
+        let manager = open_manager()?;
+        let _guard = ScHandle(manager);
+        let service = open_service(manager, name, SERVICE_CHANGE_CONFIG)?;
+        let _service_guard = ScHandle(service);
+        unsafe {
+            ChangeServiceConfigW(
+                service,
+                ENUM_SERVICE_TYPE(SERVICE_NO_CHANGE),
+                SERVICE_START_TYPE(raw_start_type(start_type)?),
+                SERVICE_ERROR(SERVICE_NO_CHANGE),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                None,
+                PCWSTR::null(),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                PCWSTR::null(),
+            )
+        }?;
+        Ok(())
+    }
 }
 
 fn open_manager() -> Result<SC_HANDLE, ServiceError> {
-    unsafe { OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_ENUMERATE_SERVICE) }
-        .map_err(Into::into)
+    // CONNECT is required to open individual service handles through the manager.
+    unsafe {
+        OpenSCManagerW(
+            PCWSTR::null(),
+            PCWSTR::null(),
+            SC_MANAGER_CONNECT | SC_MANAGER_ENUMERATE_SERVICE,
+        )
+    }
+    .map_err(Into::into)
+}
+
+/// Opens a service handle, requiring it to exist; maps "does not exist" to an error.
+fn open_service(manager: SC_HANDLE, name: &str, access: u32) -> Result<SC_HANDLE, ServiceError> {
+    match open_service_opt(manager, name, access)? {
+        Some(service) => Ok(service),
+        None => Err(ServiceError::service_not_found(name)),
+    }
 }
 
 /// Opens a service handle, mapping "service does not exist" to `Ok(None)`.
@@ -295,6 +355,23 @@ fn map_start_type(raw: SERVICE_START_TYPE) -> ServiceStartType {
         SERVICE_DISABLED => ServiceStartType::Disabled,
         _ => ServiceStartType::Unknown,
     }
+}
+
+/// Inverse of [`map_start_type`], for writing a start type back to SCM.
+fn raw_start_type(start_type: ServiceStartType) -> Result<u32, ServiceError> {
+    let raw = match start_type {
+        ServiceStartType::Boot => SERVICE_BOOT_START,
+        ServiceStartType::System => SERVICE_SYSTEM_START,
+        ServiceStartType::Automatic => SERVICE_AUTO_START,
+        ServiceStartType::Manual => SERVICE_DEMAND_START,
+        ServiceStartType::Disabled => SERVICE_DISABLED,
+        ServiceStartType::Unknown => {
+            return Err(ServiceError::Internal {
+                message: "cannot write an unknown startup type".into(),
+            })
+        }
+    };
+    Ok(raw.0)
 }
 
 /// Subscribes to SCM change notifications (`SubscribeServiceChangeNotifications`).

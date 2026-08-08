@@ -15,6 +15,7 @@ use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
+use domain::actions::ActionService;
 use domain::repository::DynServiceRepository;
 use domain::watcher::{NoopServiceWatcher, ServiceWatcher};
 use liveness::cache::ServiceCache;
@@ -26,7 +27,13 @@ use state::{AppState, TauriEventSink};
 pub fn specta_builder() -> Builder<tauri::Wry> {
     Builder::new()
         .error_handling(tauri_specta::ErrorHandlingMode::Throw)
-        .commands(collect_commands![commands::get_services])
+        .commands(collect_commands![
+            commands::get_services,
+            commands::start_service,
+            commands::stop_service,
+            commands::restart_service,
+            commands::force_start_service
+        ])
         .events(collect_events![
             ServiceStatusChanged,
             ServiceConfigChanged,
@@ -90,6 +97,7 @@ pub fn run() {
                 }
             };
             let repository: DynServiceRepository = Arc::new(WindowsServiceRepository);
+            let actions = Arc::new(ActionService::new(Arc::clone(&repository)));
             let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
             let liveness = LivenessService::new(
                 Arc::clone(&repository),
@@ -101,6 +109,7 @@ pub fn run() {
             app.manage(AppState {
                 repository,
                 cache,
+                actions,
                 _liveness: liveness_handle,
             });
             Ok(())

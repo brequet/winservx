@@ -5,7 +5,7 @@ export type ApiError = ServiceError | { kind: 'unknown'; message: string };
 function isServiceError(e: unknown): e is ServiceError {
 	if (typeof e !== 'object' || e === null) return false;
 	const kind = (e as { kind?: unknown }).kind;
-	return kind === 'windows' || kind === 'internal';
+	return kind !== 'unknown';
 }
 
 export function normalizeError(e: unknown): ApiError {
@@ -21,6 +21,8 @@ export function formatApiError(error: ApiError): string {
 			return `Windows error ${error.code} (0x${error.code.toString(16).toUpperCase()}): ${error.message}`;
 		case 'internal':
 			return `Internal error: ${error.message}`;
+		case 'timeout':
+			return `Timed out waiting for service '${error.service}' to stop`;
 		case 'unknown':
 			return error.message;
 	}
