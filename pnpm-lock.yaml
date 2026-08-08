@@ -45,6 +45,9 @@ importers:
       globals:
         specifier: ^17.9.0
         version: 17.9.0
+      husky:
+        specifier: ^8.0.0
+        version: 8.0.3
       npm-run-all2:
         specifier: ^9.0.3
         version: 9.0.3
@@ -635,6 +638,11 @@ packages:
   globals@17.9.0:
     resolution: {integrity: sha512-m/MvAW61QVU5VDNF1Vj8axt016h8w7L5TU1e9zlab7XIttAT2YAlCwl75K1fOqvMM9apmD7lbCIRhpfkhmxhCg==}
     engines: {node: '>=18'}
+
+  husky@8.0.3:
+    resolution: {integrity: sha512-+dQSyqPh4x1hlO1swXBiNb2HzTDN1I2IGLQx1GrBuiqFJfoMrnZWwVmatvSiO+Iz8fBUnf+lekwNo4c2LlXItg==}
+    engines: {node: '>=14'}
+    hasBin: true
 
   ignore@5.3.2:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
@@ -1567,6 +1575,8 @@ snapshots:
   globals@16.5.0: {}
 
   globals@17.9.0: {}
+
+  husky@8.0.3: {}
 
   ignore@5.3.2: {}
 
