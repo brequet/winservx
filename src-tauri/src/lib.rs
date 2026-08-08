@@ -1,25 +1,37 @@
 mod commands;
 mod domain;
+mod liveness;
 mod scm;
 mod state;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use tauri::Manager;
-use tauri_specta::{Builder, collect_commands};
-use tracing::{error, info};
+use tauri_specta::{Builder, collect_commands, collect_events};
+use tokio::sync::mpsc;
+use tracing::{error, info, warn};
 use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
-use scm::windows::WindowsServiceRepository;
-use state::AppState;
+use domain::repository::DynServiceRepository;
+use domain::watcher::{NoopServiceWatcher, ServiceWatcher};
+use liveness::cache::ServiceCache;
+use liveness::events::{ServiceConfigChanged, ServiceStatusChanged, ServicesChanged};
+use liveness::service::LivenessService;
+use scm::windows::{WindowsServiceRepository, WindowsServiceWatcher};
+use state::{AppState, TauriEventSink};
 
 pub fn specta_builder() -> Builder<tauri::Wry> {
     Builder::new()
         .error_handling(tauri_specta::ErrorHandlingMode::Throw)
         .commands(collect_commands![commands::get_services])
+        .events(collect_events![
+            ServiceStatusChanged,
+            ServiceConfigChanged,
+            ServicesChanged
+        ])
 }
 
 pub fn run() {
@@ -62,13 +74,35 @@ pub fn run() {
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .manage(AppState {
-            repository: Arc::new(WindowsServiceRepository),
-        })
         .setup(|app| {
             if let Ok(dir) = app.path().app_log_dir() {
                 std::fs::create_dir_all(&dir)?;
             }
+            specta_builder().mount_events(app);
+
+            let cache = Arc::new(RwLock::new(ServiceCache::default()));
+            let (signal_tx, signal_rx) = mpsc::channel(256);
+            let watcher: Box<dyn ServiceWatcher> = match WindowsServiceWatcher::new(signal_tx) {
+                Ok(watcher) => Box::new(watcher),
+                Err(error) => {
+                    warn!(error = %error, "SCM change subscriptions unavailable; relying on polling");
+                    Box::new(NoopServiceWatcher)
+                }
+            };
+            let repository: DynServiceRepository = Arc::new(WindowsServiceRepository);
+            let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
+            let liveness = LivenessService::new(
+                Arc::clone(&repository),
+                watcher,
+                Arc::clone(&cache),
+                sink,
+            );
+            let liveness_handle = liveness.start(signal_rx);
+            app.manage(AppState {
+                repository,
+                cache,
+                _liveness: liveness_handle,
+            });
             Ok(())
         })
         .invoke_handler(specta_builder().invoke_handler())

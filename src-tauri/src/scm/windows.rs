@@ -1,34 +1,131 @@
+use std::collections::HashMap;
 use std::mem::size_of;
 use std::ptr;
+use std::sync::Mutex;
 
+use tokio::sync::mpsc;
 use tracing::{debug, warn};
-use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA};
+use windows::Win32::Foundation::{
+    ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA, ERROR_SERVICE_DOES_NOT_EXIST,
+};
 use windows::Win32::System::Services::{
     CloseServiceHandle, ENUM_SERVICE_STATUS_PROCESSW, ENUM_SERVICE_TYPE, EnumServicesStatusExW,
-    OpenSCManagerW, OpenServiceW, QUERY_SERVICE_CONFIGW, QueryServiceConfigW, SC_ENUM_PROCESS_INFO,
-    SC_HANDLE, SC_MANAGER_ENUMERATE_SERVICE, SERVICE_AUTO_START, SERVICE_BOOT_START,
-    SERVICE_CONTINUE_PENDING, SERVICE_DEMAND_START, SERVICE_DISABLED, SERVICE_FILE_SYSTEM_DRIVER,
-    SERVICE_KERNEL_DRIVER, SERVICE_PAUSE_PENDING, SERVICE_PAUSED, SERVICE_QUERY_CONFIG,
-    SERVICE_RECOGNIZER_DRIVER, SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_START_TYPE,
-    SERVICE_STATE_ALL, SERVICE_STATUS_CURRENT_STATE, SERVICE_STOP_PENDING, SERVICE_STOPPED,
+    OpenSCManagerW, OpenServiceW, PSC_NOTIFICATION_REGISTRATION, QUERY_SERVICE_CONFIGW,
+    QueryServiceConfigW, QueryServiceStatusEx, SC_ENUM_PROCESS_INFO, SC_EVENT_DATABASE_CHANGE,
+    SC_EVENT_PROPERTY_CHANGE, SC_EVENT_STATUS_CHANGE, SC_EVENT_TYPE, SC_HANDLE,
+    SC_MANAGER_ENUMERATE_SERVICE, SC_STATUS_PROCESS_INFO,
+    SERVICE_AUTO_START, SERVICE_BOOT_START, SERVICE_CONTINUE_PENDING, SERVICE_DEMAND_START,
+    SERVICE_DISABLED, SERVICE_FILE_SYSTEM_DRIVER, SERVICE_KERNEL_DRIVER, SERVICE_PAUSE_PENDING,
+    SERVICE_PAUSED, SERVICE_QUERY_CONFIG, SERVICE_QUERY_STATUS, SERVICE_RECOGNIZER_DRIVER,
+    SERVICE_RUNNING, SERVICE_START_PENDING, SERVICE_START_TYPE, SERVICE_STATE_ALL,
+    SERVICE_STATUS_CURRENT_STATE, SERVICE_STATUS_PROCESS, SERVICE_STOP_PENDING, SERVICE_STOPPED,
     SERVICE_SYSTEM_START, SERVICE_WIN32_OWN_PROCESS, SERVICE_WIN32_SHARE_PROCESS,
+    SubscribeServiceChangeNotifications, UnsubscribeServiceChangeNotifications,
 };
 use windows::core::{HRESULT, PCWSTR};
 
 use crate::domain::error::ServiceError;
 use crate::domain::repository::ServiceRepository;
-use crate::domain::service::{ServiceInfo, ServiceKind, ServiceStartType, ServiceState};
+use crate::domain::service::{
+    ServiceConfig, ServiceInfo, ServiceKind, ServiceRuntimeStatus, ServiceStartType, ServiceState,
+};
+use crate::domain::watcher::{ServiceWatcher, WatcherSignal};
 
 /// Lists services via the Windows Service Control Manager (advapi32).
 pub struct WindowsServiceRepository;
 
 impl ServiceRepository for WindowsServiceRepository {
     fn list_services(&self) -> Result<Vec<ServiceInfo>, ServiceError> {
-        let manager = unsafe {
-            OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_ENUMERATE_SERVICE)
-        }?;
+        let manager = open_manager()?;
         let _guard = ScHandle(manager);
-        enumerate_services(manager)
+        let entries = enumerate_entries(manager)?;
+        Ok(entries
+            .into_iter()
+            .map(|entry| ServiceInfo {
+                start_type: start_type_of(manager, &entry.name),
+                name: entry.name,
+                display_name: entry.display_name,
+                state: entry.state,
+                kind: entry.kind,
+                pid: entry.pid,
+            })
+            .collect())
+    }
+
+    fn list_states(&self) -> Result<Vec<ServiceRuntimeStatus>, ServiceError> {
+        let manager = open_manager()?;
+        let _guard = ScHandle(manager);
+        let entries = enumerate_entries(manager)?;
+        Ok(entries
+            .into_iter()
+            .map(|entry| ServiceRuntimeStatus {
+                name: entry.name,
+                state: entry.state,
+                pid: entry.pid,
+            })
+            .collect())
+    }
+
+    fn query_service_status(&self, name: &str) -> Result<Option<ServiceRuntimeStatus>, ServiceError> {
+        let manager = open_manager()?;
+        let _guard = ScHandle(manager);
+        let Some(service) = open_service_opt(manager, name, SERVICE_QUERY_STATUS)? else {
+            return Ok(None);
+        };
+        let _service_guard = ScHandle(service);
+
+        let mut status = SERVICE_STATUS_PROCESS::default();
+        let mut needed = 0u32;
+        let buffer = unsafe {
+            std::slice::from_raw_parts_mut(
+                (&mut status as *mut SERVICE_STATUS_PROCESS).cast::<u8>(),
+                size_of::<SERVICE_STATUS_PROCESS>(),
+            )
+        };
+        unsafe { QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, Some(buffer), &mut needed) }?;
+        Ok(Some(ServiceRuntimeStatus {
+            name: name.to_owned(),
+            state: map_state(status.dwCurrentState),
+            pid: (status.dwProcessId != 0).then_some(status.dwProcessId),
+        }))
+    }
+
+    fn query_config(&self, name: &str) -> Result<Option<ServiceConfig>, ServiceError> {
+        let manager = open_manager()?;
+        let _guard = ScHandle(manager);
+        let Some(service) = open_service_opt(manager, name, SERVICE_QUERY_CONFIG)? else {
+            return Ok(None);
+        };
+        let _service_guard = ScHandle(service);
+
+        let config = query_config_w(service)?;
+        let display_name =
+            unsafe { config.lpDisplayName.to_string() }.unwrap_or_else(|_| name.to_owned());
+        Ok(Some(ServiceConfig {
+            display_name,
+            start_type: map_start_type(config.dwStartType),
+        }))
+    }
+}
+
+fn open_manager() -> Result<SC_HANDLE, ServiceError> {
+    unsafe { OpenSCManagerW(PCWSTR::null(), PCWSTR::null(), SC_MANAGER_ENUMERATE_SERVICE) }
+        .map_err(Into::into)
+}
+
+/// Opens a service handle, mapping "service does not exist" to `Ok(None)`.
+fn open_service_opt(
+    manager: SC_HANDLE,
+    name: &str,
+    access: u32,
+) -> Result<Option<SC_HANDLE>, ServiceError> {
+    let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    match unsafe { OpenServiceW(manager, PCWSTR(name_wide.as_ptr()), access) } {
+        Ok(service) => Ok(Some(service)),
+        Err(error) if error.code() == HRESULT::from_win32(ERROR_SERVICE_DOES_NOT_EXIST.0) => {
+            Ok(None)
+        }
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -43,7 +140,16 @@ impl Drop for ScHandle {
     }
 }
 
-fn enumerate_services(manager: SC_HANDLE) -> Result<Vec<ServiceInfo>, ServiceError> {
+/// A service as reported by a single `EnumServicesStatusEx` call, without per-service config.
+struct RawServiceEntry {
+    name: String,
+    display_name: String,
+    state: ServiceState,
+    kind: ServiceKind,
+    pid: Option<u32>,
+}
+
+fn enumerate_entries(manager: SC_HANDLE) -> Result<Vec<RawServiceEntry>, ServiceError> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut needed = 0u32;
     let mut returned = 0u32;
@@ -73,7 +179,7 @@ fn enumerate_services(manager: SC_HANDLE) -> Result<Vec<ServiceInfo>, ServiceErr
     }
 
     let entry_size = size_of::<ENUM_SERVICE_STATUS_PROCESSW>();
-    let mut services = Vec::with_capacity(returned as usize);
+    let mut entries = Vec::with_capacity(returned as usize);
     for i in 0..returned as usize {
         let entry = unsafe {
             ptr::read_unaligned(
@@ -90,40 +196,45 @@ fn enumerate_services(manager: SC_HANDLE) -> Result<Vec<ServiceInfo>, ServiceErr
         };
         let display_name =
             unsafe { entry.lpDisplayName.to_string() }.unwrap_or_else(|_| name.clone());
-        let start_type = start_type_of(manager, &name);
-        services.push(ServiceInfo {
+        entries.push(RawServiceEntry {
             name,
             display_name,
             state: map_state(entry.ServiceStatusProcess.dwCurrentState),
-            start_type,
             kind: map_kind(entry.ServiceStatusProcess.dwServiceType),
             pid: (entry.ServiceStatusProcess.dwProcessId != 0)
                 .then_some(entry.ServiceStatusProcess.dwProcessId),
         });
     }
-    services.sort_unstable_by(|left, right| left.name.cmp(&right.name));
-    debug!(count = services.len(), "service enumeration complete");
-    Ok(services)
+    entries.sort_unstable_by(|left, right| left.name.cmp(&right.name));
+    debug!(count = entries.len(), "service enumeration complete");
+    Ok(entries)
 }
 
 /// Queries an individual service's start type. Returns `None` if the service
 /// cannot be opened or queried (e.g. it was deleted mid-enumeration).
 fn start_type_of(manager: SC_HANDLE, name: &str) -> Option<ServiceStartType> {
-    let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
-    let service =
-        match unsafe { OpenServiceW(manager, PCWSTR(name_wide.as_ptr()), SERVICE_QUERY_CONFIG) } {
-            Ok(service) => service,
-            Err(error) => {
-                debug!(
-                    service = name,
-                    error = %error,
-                    "cannot open service; start type unavailable"
-                );
-                return None;
-            }
-        };
+    let service = match open_service_opt(manager, name, SERVICE_QUERY_CONFIG) {
+        Ok(Some(service)) => service,
+        Ok(None) => {
+            debug!(service = name, "service no longer exists; start type unavailable");
+            return None;
+        }
+        Err(error) => {
+            debug!(service = name, error = %error, "cannot open service; start type unavailable");
+            return None;
+        }
+    };
     let _guard = ScHandle(service);
+    match query_config_w(service) {
+        Ok(config) => Some(map_start_type(config.dwStartType)),
+        Err(error) => {
+            debug!(service = name, error = %error, "cannot query service config; start type unavailable");
+            None
+        }
+    }
+}
 
+fn query_config_w(service: SC_HANDLE) -> Result<QUERY_SERVICE_CONFIGW, ServiceError> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut needed = 0u32;
     loop {
@@ -140,19 +251,10 @@ fn start_type_of(manager: SC_HANDLE, name: &str) -> Option<ServiceStartType> {
             Err(error) if error.code() == HRESULT::from_win32(ERROR_INSUFFICIENT_BUFFER.0) => {
                 buffer.resize(needed as usize, 0);
             }
-            Err(error) => {
-                debug!(
-                    service = name,
-                    error = %error,
-                    "cannot query service config; start type unavailable"
-                );
-                return None;
-            }
+            Err(error) => return Err(error.into()),
         }
     }
-
-    let config = unsafe { ptr::read_unaligned(buffer.as_ptr() as *const QUERY_SERVICE_CONFIGW) };
-    Some(map_start_type(config.dwStartType))
+    Ok(unsafe { ptr::read_unaligned(buffer.as_ptr() as *const QUERY_SERVICE_CONFIGW) })
 }
 
 fn map_state(raw: SERVICE_STATUS_CURRENT_STATE) -> ServiceState {
@@ -192,6 +294,173 @@ fn map_start_type(raw: SERVICE_START_TYPE) -> ServiceStartType {
         SERVICE_DEMAND_START => ServiceStartType::Manual,
         SERVICE_DISABLED => ServiceStartType::Disabled,
         _ => ServiceStartType::Unknown,
+    }
+}
+
+/// Subscribes to SCM change notifications (`SubscribeServiceChangeNotifications`).
+///
+/// The callback runs on a threadpool owned by the SCM host, so it only ever
+/// forwards into the channel. Contexts are leaked for the app lifetime: callbacks
+/// may still be in flight after unsubscription, so the box is never reclaimed.
+/// The 600-odd contexts per app run cost a few dozen KB at most.
+struct SubscriptionCtx {
+    tx: mpsc::Sender<WatcherSignal>,
+    signal: WatcherSignal,
+}
+
+unsafe extern "system" fn notification_callback(
+    _dw_notify: u32,
+    context: *const core::ffi::c_void,
+) {
+    // Safety: the context pointer is only ever constructed as a leaked `Box<SubscriptionCtx>`.
+    let ctx = unsafe { &*(context as *const SubscriptionCtx) };
+    // Never block the SCM threadpool; a full channel means the poll will catch up.
+    let _ = ctx.tx.try_send(ctx.signal.clone());
+}
+
+fn subscribe_service(
+    handle: SC_HANDLE,
+    event_type: SC_EVENT_TYPE,
+    signal: WatcherSignal,
+    tx: &mpsc::Sender<WatcherSignal>,
+) -> Result<PSC_NOTIFICATION_REGISTRATION, ServiceError> {
+    let ctx = Box::leak(Box::new(SubscriptionCtx {
+        tx: tx.clone(),
+        signal,
+    }));
+    let mut registration = PSC_NOTIFICATION_REGISTRATION(0);
+    let code = unsafe {
+        SubscribeServiceChangeNotifications(
+            handle,
+            event_type,
+            Some(notification_callback),
+            Some(core::ptr::from_ref(ctx).cast::<core::ffi::c_void>()),
+            &mut registration,
+        )
+    };
+    if code != 0 {
+        Err(ServiceError::from(windows::core::Error::from_hresult(
+            HRESULT::from_win32(code),
+        )))
+    } else {
+        Ok(registration)
+    }
+}
+
+fn unsubscribe_service(registration: &PSC_NOTIFICATION_REGISTRATION) {
+    if registration.0 != 0 {
+        unsafe { UnsubscribeServiceChangeNotifications(*registration) };
+    }
+}
+
+/// Watches every service in the database for status, config and add/remove changes.
+struct WatcherInner {
+    manager: ScHandle,
+    tx: mpsc::Sender<WatcherSignal>,
+    subscriptions: HashMap<String, ServiceSubscription>,
+    database: PSC_NOTIFICATION_REGISTRATION,
+}
+
+struct ServiceSubscription {
+    /// Keeps the service handle open for the subscription's lifetime; closed on drop.
+    #[allow(dead_code)]
+    handle: ScHandle,
+    status: PSC_NOTIFICATION_REGISTRATION,
+    config: PSC_NOTIFICATION_REGISTRATION,
+}
+
+pub struct WindowsServiceWatcher {
+    inner: Mutex<WatcherInner>,
+}
+
+// Sound because all SCM handles are only ever accessed while holding `inner`, and
+// the notification callback only reads its own leaked context and the channel.
+unsafe impl Send for WindowsServiceWatcher {}
+unsafe impl Sync for WindowsServiceWatcher {}
+
+impl WindowsServiceWatcher {
+    pub fn new(tx: mpsc::Sender<WatcherSignal>) -> Result<Self, ServiceError> {
+        let manager = open_manager()?;
+        let database = subscribe_service(
+            manager,
+            SC_EVENT_DATABASE_CHANGE,
+            WatcherSignal::Database,
+            &tx,
+        )?;
+        Ok(Self {
+            inner: Mutex::new(WatcherInner {
+                manager: ScHandle(manager),
+                tx,
+                subscriptions: HashMap::new(),
+                database,
+            }),
+        })
+    }
+}
+
+impl ServiceWatcher for WindowsServiceWatcher {
+    fn watch_service(&self, name: &str) -> Result<(), ServiceError> {
+        let mut inner = self.inner.lock().expect("watcher mutex poisoned");
+        if inner.subscriptions.contains_key(name) {
+            return Ok(());
+        }
+        let Some(handle) = open_service_opt(
+            inner.manager.0,
+            name,
+            SERVICE_QUERY_STATUS | SERVICE_QUERY_CONFIG,
+        )?
+        else {
+            return Ok(()); // deleted since it was enumerated
+        };
+
+        let mut subscription = ServiceSubscription {
+            handle: ScHandle(handle),
+            status: PSC_NOTIFICATION_REGISTRATION(0),
+            config: PSC_NOTIFICATION_REGISTRATION(0),
+        };
+        match subscribe_service(
+            handle,
+            SC_EVENT_STATUS_CHANGE,
+            WatcherSignal::Status { name: name.to_owned() },
+            &inner.tx,
+        ) {
+            Ok(registration) => subscription.status = registration,
+            Err(error) => warn!(service = name, error = %error, "status subscription failed"),
+        }
+        match subscribe_service(
+            handle,
+            SC_EVENT_PROPERTY_CHANGE,
+            WatcherSignal::Config { name: name.to_owned() },
+            &inner.tx,
+        ) {
+            Ok(registration) => subscription.config = registration,
+            Err(error) => warn!(service = name, error = %error, "config subscription failed"),
+        }
+
+        if subscription.status.0 == 0 && subscription.config.0 == 0 {
+            return Ok(()); // nothing subscribed; the handle is dropped with the guard
+        }
+        inner.subscriptions.insert(name.to_owned(), subscription);
+        Ok(())
+    }
+
+    fn unwatch_service(&self, name: &str) {
+        let mut inner = self.inner.lock().expect("watcher mutex poisoned");
+        if let Some(subscription) = inner.subscriptions.remove(name) {
+            unsubscribe_service(&subscription.status);
+            unsubscribe_service(&subscription.config);
+        }
+    }
+}
+
+impl Drop for WindowsServiceWatcher {
+    fn drop(&mut self) {
+        let inner = self.inner.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        unsubscribe_service(&inner.database);
+        for subscription in inner.subscriptions.values() {
+            unsubscribe_service(&subscription.status);
+            unsubscribe_service(&subscription.config);
+        }
     }
 }
 

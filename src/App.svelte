@@ -1,7 +1,13 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
-	import type { ServiceInfo } from '$lib/tauri/bindings';
+	import { onDestroy, onMount } from 'svelte';
+	import type {
+		ServiceConfigChanged,
+		ServiceInfo,
+		ServiceStatusChanged,
+		ServicesChanged
+	} from '$lib/tauri/bindings';
 	import { loadServices } from '$lib/api/services';
+	import { subscribeToLiveness } from '$lib/api/liveness';
 	import { formatApiError } from '$lib/api/errors';
 	import { isErr } from '$lib/result';
 	import ServiceTable from '$lib/components/ServiceTable.svelte';
@@ -12,6 +18,7 @@
 	let error: string | null = $state(null);
 	let query = $state('');
 	let searchInput: HTMLInputElement | undefined = $state();
+	let unlisteners: Array<() => void> = [];
 
 	const filtered = $derived(
 		query.trim() === ''
@@ -25,6 +32,39 @@
 					);
 				})
 	);
+
+	function upsert(service: ServiceInfo) {
+		const index = services.findIndex((s) => s.name === service.name);
+		if (index === -1) {
+			services = [...services, service];
+		} else {
+			services[index] = service;
+		}
+	}
+
+	function onStatusChanged(event: ServiceStatusChanged) {
+		const service = services.find((s) => s.name === event.name);
+		if (service) {
+			service.state = event.state;
+			service.pid = event.pid;
+		}
+	}
+
+	function onConfigChanged(event: ServiceConfigChanged) {
+		const service = services.find((s) => s.name === event.name);
+		if (service) {
+			service.displayName = event.displayName;
+			service.startType = event.startType;
+		}
+	}
+
+	function onServicesChanged(event: ServicesChanged) {
+		if (event.removed.length > 0) {
+			const removed = new Set(event.removed);
+			services = services.filter((s) => !removed.has(s.name));
+		}
+		for (const service of event.added) upsert(service);
+	}
 
 	async function load() {
 		loading = true;
@@ -42,7 +82,18 @@
 		searchInput?.focus();
 	}
 
-	onMount(load);
+	onMount(async () => {
+		unlisteners = await subscribeToLiveness({
+			onStatusChanged,
+			onConfigChanged,
+			onServicesChanged
+		});
+		await load();
+	});
+
+	onDestroy(() => {
+		for (const unlisten of unlisteners) unlisten();
+	});
 </script>
 
 <svelte:window
@@ -71,9 +122,6 @@
 			}}
 		/>
 		<span class="search-hint">esc to clear</span>
-		<button class="btn btn--ghost" onclick={load} disabled={loading}>
-			{loading ? 'loading…' : 'refresh'}
-		</button>
 		<ThemeToggle />
 	</div>
 

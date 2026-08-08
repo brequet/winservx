@@ -46,3 +46,19 @@ pub struct ServiceInfo {
     pub kind: ServiceKind,
     pub pid: Option<u32>,
 }
+
+/// Runtime state of a service, reported by lightweight SCM queries.
+/// Used internally by the liveness pipeline; not exported to the frontend.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceRuntimeStatus {
+    pub name: String,
+    pub state: ServiceState,
+    pub pid: Option<u32>,
+}
+
+/// Configuration of a single service, reported by SCM config queries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServiceConfig {
+    pub display_name: String,
+    pub start_type: ServiceStartType,
+}
