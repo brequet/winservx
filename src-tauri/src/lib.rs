@@ -1,30 +1,28 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod commands;
+mod domain;
+mod scm;
+mod state;
+
+use std::sync::Arc;
+
 use tauri_specta::{Builder, collect_commands};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct GreetResponse {
-    pub name: String,
-    pub message: String,
-}
-
-#[tauri::command]
-#[specta::specta]
-fn greet(name: &str) -> GreetResponse {
-    GreetResponse {
-        name: name.to_string(),
-        message: format!("Hello, {name}! You've been greeted from Rust!"),
-    }
-}
+use scm::windows::WindowsServiceRepository;
+use state::AppState;
 
 pub fn specta_builder() -> Builder<tauri::Wry> {
-    Builder::new().commands(collect_commands![greet])
+    Builder::new()
+        .error_handling(tauri_specta::ErrorHandlingMode::Throw)
+        .commands(collect_commands![commands::get_services])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(AppState {
+            repository: Arc::new(WindowsServiceRepository),
+        })
         .invoke_handler(specta_builder().invoke_handler())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

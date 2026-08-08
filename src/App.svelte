@@ -1,40 +1,70 @@
 <script lang="ts">
-	import { commands, type GreetResponse } from './lib/tauri/bindings';
+	import { onMount } from 'svelte';
+	import { commands, type ServiceInfo } from './lib/tauri/bindings';
+	import ServiceTable from './lib/components/ServiceTable.svelte';
 
-	let name = $state('');
-	let greetMsg = $state('Press the button');
+	let services: ServiceInfo[] = $state([]);
+	let loading = $state(true);
+	let error: string | null = $state(null);
 
-	let debugRes: GreetResponse | null = $state(null);
-
-	async function greet(e: SubmitEvent) {
-		e.preventDefault();
-		debugRes = await commands.greet(name);
-		greetMsg = debugRes.message;
+	async function load() {
+		loading = true;
+		error = null;
+		try {
+			services = await commands.getServices();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			loading = false;
+		}
 	}
+
+	onMount(load);
 </script>
 
-<h1>Welcome to Tauri</h1>
+<main class="page">
+	<header class="header">
+		<h1>WinServX</h1>
+		<button onclick={load} disabled={loading}>
+			{loading ? 'Loading…' : 'Refresh'}
+		</button>
+	</header>
 
-<div class="row">
-	<a href="https://vite.dev" target="_blank">
-		<img src="/src/assets/vite.svg" class="logo vite" alt="Vite logo" />
-	</a>
-	<a href="https://tauri.app" target="_blank">
-		<img src="/src/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
-	</a>
-	<a href="https://svelte.dev" target="_blank">
-		<img src="/src/assets/typescript.svg" class="logo typescript" alt="Svelte logo" />
-	</a>
-</div>
+	{#if error}
+		<div class="error">Failed to load services: {error}</div>
+	{:else if loading}
+		<p class="hint">Loading services…</p>
+	{:else if services.length === 0}
+		<p class="hint">No services found.</p>
+	{:else}
+		<ServiceTable {services} />
+	{/if}
+</main>
 
-<p>Click on the Tauri logo to learn more about the framework</p>
+<style>
+	.page {
+		max-width: 900px;
+		margin: 0 auto;
+		padding: 2rem;
+		font-family: system-ui, sans-serif;
+	}
 
-<form class="row" onsubmit={greet}>
-	<input id="greet-input" bind:value={name} placeholder="Enter a name..." />
-	<button type="submit">Greet</button>
-</form>
-<p>{greetMsg}</p>
+	.header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+	}
 
-{#if debugRes !== null}
-	<pre>{JSON.stringify(debugRes)}</pre>
-{/if}
+	.hint {
+		color: #888;
+	}
+
+	.error {
+		color: #b00020;
+		background: #ffeaea;
+		border: 1px solid #f5c6c6;
+		border-radius: 6px;
+		padding: 0.75rem 1rem;
+	}
+</style>
