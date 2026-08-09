@@ -70,6 +70,26 @@ export function rowActions(service: ServiceInfo): RowAction[] {
 	}
 }
 
+export type CopyItemId = 'name' | 'path' | 'pid';
+
+export interface CopyItem {
+	id: CopyItemId;
+	label: string;
+	text: string;
+}
+
+/** Copyable technical details for the overflow menu; only what's available. */
+export function copyItems(service: ServiceInfo): CopyItem[] {
+	const items: CopyItem[] = [{ id: 'name', label: 'Copy service name', text: service.name }];
+	if (service.binaryPath) {
+		items.push({ id: 'path', label: 'Copy executable path', text: service.binaryPath });
+	}
+	if (service.pid !== null) {
+		items.push({ id: 'pid', label: 'Copy PID', text: String(service.pid) });
+	}
+	return items;
+}
+
 export function stripeClass(state: ServiceState): string {
 	switch (state) {
 		case 'running':
@@ -137,11 +157,20 @@ export function startupOptions(kind: ServiceKind): { value: ServiceStartType; la
 	return values.map((value) => ({ value, label: value }));
 }
 
-export type SortColumn = 'state' | 'displayName' | 'name' | 'startType';
+export type SortColumn =
+	'state' | 'displayName' | 'kind' | 'name' | 'startType' | 'startName' | 'pid';
 export type SortDirection = 'asc' | 'desc';
 export type SortState = { column: SortColumn; direction: SortDirection } | null;
 
-export const SORTABLE_COLUMNS: SortColumn[] = ['state', 'displayName', 'name', 'startType'];
+export const SORTABLE_COLUMNS: SortColumn[] = [
+	'state',
+	'displayName',
+	'kind',
+	'name',
+	'startType',
+	'startName',
+	'pid'
+];
 
 export type ColumnId =
 	| 'stripe'
@@ -206,23 +235,37 @@ export function sortAfterClick(sort: SortState, column: SortColumn): SortState {
 	return sort.direction === 'asc' ? { column, direction: 'desc' } : null;
 }
 
-function columnValue(service: ServiceInfo, column: SortColumn): string {
+function columnValue(service: ServiceInfo, column: SortColumn): string | number | null {
 	switch (column) {
 		case 'state':
 			return service.state;
 		case 'displayName':
 			return service.displayName;
+		case 'kind':
+			return KIND_LABEL[service.kind];
 		case 'name':
 			return service.name;
 		case 'startType':
 			return service.startType ?? 'unknown';
+		case 'startName':
+			return service.startName ? logonLabel(service.startName) : null;
+		case 'pid':
+			return service.pid;
 	}
 }
 
-function compare(left: string, right: string, rank?: Record<string, number>): number {
+function compare(
+	left: string | number,
+	right: string | number,
+	rank?: Record<string, number>
+): number {
 	if (rank)
-		return (rank[left] ?? Number.MAX_SAFE_INTEGER) - (rank[right] ?? Number.MAX_SAFE_INTEGER);
-	return left.localeCompare(right, undefined, { sensitivity: 'base' });
+		return (
+			(rank[String(left)] ?? Number.MAX_SAFE_INTEGER) -
+			(rank[String(right)] ?? Number.MAX_SAFE_INTEGER)
+		);
+	if (typeof left === 'number' && typeof right === 'number') return left - right;
+	return String(left).localeCompare(String(right), undefined, { sensitivity: 'base' });
 }
 
 /**
@@ -236,7 +279,13 @@ export function sortServices(services: ServiceInfo[], sort: SortState): ServiceI
 	const rank = column === 'state' ? STATE_RANK : column === 'startType' ? STARTUP_RANK : undefined;
 	const sign = direction === 'asc' ? 1 : -1;
 	return [...services].sort((left, right) => {
-		const cmp = compare(columnValue(left, column), columnValue(right, column), rank);
+		const leftValue = columnValue(left, column);
+		const rightValue = columnValue(right, column);
+		if (leftValue === null || rightValue === null) {
+			if (leftValue === rightValue) return left.name.localeCompare(right.name);
+			return leftValue === null ? 1 : -1;
+		}
+		const cmp = compare(leftValue, rightValue, rank);
 		return cmp === 0 ? left.name.localeCompare(right.name) : cmp * sign;
 	});
 }

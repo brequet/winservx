@@ -93,17 +93,17 @@
 				{@render sortHeader('displayName', 'Display name')}
 			{/if}
 			{#if visible.kind}
-				<th scope="col">Kind</th>
+				{@render sortHeader('kind', 'Kind')}
 			{/if}
 			{@render sortHeader('name', 'Service name')}
 			{#if visible.startType}
 				{@render sortHeader('startType', 'Startup', true)}
 			{/if}
 			{#if visible.startName}
-				<th scope="col">Log on as</th>
+				{@render sortHeader('startName', 'Log on as')}
 			{/if}
 			{#if visible.pid}
-				<th scope="col" class="th-right">PID</th>
+				{@render sortHeader('pid', 'PID', true)}
 			{/if}
 			<th scope="col" class="th-right">Actions</th>
 		</tr>
@@ -237,7 +237,7 @@
 		font-size: 10px;
 		font-weight: 600;
 		letter-spacing: 0.08em;
-		text-transform: uppercase;
+		text-transform: capitalize;
 		color: var(--text-dim);
 		text-align: left;
 		padding: 10px 2px 8px;

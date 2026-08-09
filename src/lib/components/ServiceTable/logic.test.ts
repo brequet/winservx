@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ServiceInfo } from '$lib/tauri/bindings';
 import {
 	rowActions,
+	copyItems,
 	isTransitioning,
 	startupOptions,
 	startupClass,
@@ -71,6 +72,23 @@ describe('rowActions', () => {
 		for (const state of ['startPending', 'stopPending', 'continuePending', 'pausePending']) {
 			expect(rowActions(service(state as never, 'manual'))).toEqual([]);
 		}
+	});
+});
+
+describe('copyItems', () => {
+	it('offers name, path and pid when all are available', () => {
+		const svc = service('running', 'automatic');
+		svc.binaryPath = 'C:\\bin\\svc.exe';
+		svc.pid = 4242;
+		expect(copyItems(svc)).toEqual([
+			{ id: 'name', label: 'Copy service name', text: 'svc' },
+			{ id: 'path', label: 'Copy executable path', text: 'C:\\bin\\svc.exe' },
+			{ id: 'pid', label: 'Copy PID', text: '4242' }
+		]);
+	});
+
+	it('omits the path when unknown and the pid when the service has none', () => {
+		expect(copyItems(service('stopped', 'manual')).map((item) => item.id)).toEqual(['name']);
 	});
 });
 
@@ -208,6 +226,34 @@ describe('sortServices', () => {
 		expect(
 			sortServices(byStart, { column: 'startType', direction: 'asc' }).map((s) => s.name)
 		).toEqual(['auto', 'boot', 'manual', 'disabled']);
+	});
+
+	it('sorts kind and logon account by their displayed labels', () => {
+		const byDetails = [
+			svc('shared', { kind: 'win32ShareProcess', startName: 'NT AUTHORITY\\NetworkService' }),
+			svc('own', { kind: 'win32OwnProcess', startName: 'LocalSystem' }),
+			svc('missing', { kind: 'unknown', startName: null })
+		];
+		expect(
+			sortServices(byDetails, { column: 'kind', direction: 'asc' }).map((s) => s.name)
+		).toEqual(['own', 'shared', 'missing']);
+		expect(
+			sortServices(byDetails, { column: 'startName', direction: 'asc' }).map((s) => s.name)
+		).toEqual(['own', 'shared', 'missing']);
+	});
+
+	it('sorts PIDs numerically and keeps missing values last', () => {
+		const byPid = [svc('ten', { pid: 10 }), svc('two', { pid: 2 }), svc('missing', { pid: null })];
+		expect(sortServices(byPid, { column: 'pid', direction: 'asc' }).map((s) => s.name)).toEqual([
+			'two',
+			'ten',
+			'missing'
+		]);
+		expect(sortServices(byPid, { column: 'pid', direction: 'desc' }).map((s) => s.name)).toEqual([
+			'ten',
+			'two',
+			'missing'
+		]);
 	});
 
 	it('keeps equal values in name order as a stable tiebreaker', () => {
