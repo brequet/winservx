@@ -2,10 +2,10 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
-use crate::domain::repository::DynServiceRepository;
 use crate::domain::watcher::{ServiceWatcher, WatcherSignal};
+use crate::queue::bridge::AsyncServiceRepository;
 
 use super::cache::ServiceCache;
 use super::events::{LivenessEvent, ServicesChanged};
@@ -23,7 +23,7 @@ pub trait EventSink: Send + Sync + 'static {
 /// Owns the service read model and keeps it fresh from two sources: SCM change
 /// notifications (fast path) and a periodic reconciliation poll (safety net).
 pub struct LivenessService {
-    repository: DynServiceRepository,
+    repository: Arc<AsyncServiceRepository>,
     watcher: Box<dyn ServiceWatcher>,
     cache: Arc<RwLock<ServiceCache>>,
     sink: Arc<dyn EventSink>,
@@ -36,7 +36,7 @@ pub struct LivenessHandle {
 
 impl LivenessService {
     pub fn new(
-        repository: DynServiceRepository,
+        repository: Arc<AsyncServiceRepository>,
         watcher: Box<dyn ServiceWatcher>,
         cache: Arc<RwLock<ServiceCache>>,
         sink: Arc<dyn EventSink>,
@@ -75,17 +75,10 @@ impl LivenessService {
     }
 
     async fn reconcile_poll(self: &Arc<Self>) {
-        let repository = Arc::clone(&self.repository);
-        let states = match tauri::async_runtime::spawn_blocking(move || repository.list_states())
-            .await
-        {
-            Ok(Ok(states)) => states,
-            Ok(Err(error)) => {
+        let states = match self.repository.list_states().await {
+            Ok(states) => states,
+            Err(error) => {
                 warn!(error = %error, "status reconciliation failed");
-                return;
-            }
-            Err(panic) => {
-                error!(panic = %panic, "status reconciliation task panicked");
                 return;
             }
         };
@@ -105,17 +98,10 @@ impl LivenessService {
     }
 
     async fn refresh_all(self: &Arc<Self>) {
-        let repository = Arc::clone(&self.repository);
-        let fresh = match tauri::async_runtime::spawn_blocking(move || repository.list_services())
-            .await
-        {
-            Ok(Ok(fresh)) => fresh,
-            Ok(Err(error)) => {
+        let fresh = match self.repository.list_services().await {
+            Ok(fresh) => fresh,
+            Err(error) => {
                 warn!(error = %error, "full refresh failed");
-                return;
-            }
-            Err(panic) => {
-                error!(panic = %panic, "full refresh task panicked");
                 return;
             }
         };
@@ -169,21 +155,11 @@ impl LivenessService {
     }
 
     async fn on_status_changed(self: &Arc<Self>, name: &str) {
-        let repository = Arc::clone(&self.repository);
-        let query_name = name.to_owned();
-        let status = match tauri::async_runtime::spawn_blocking(move || {
-            repository.query_service_status(&query_name)
-        })
-        .await
-        {
-            Ok(Ok(Some(status))) => status,
-            Ok(Ok(None)) => return,
-            Ok(Err(error)) => {
+        let status = match self.repository.query_service_status(name).await {
+            Ok(Some(status)) => status,
+            Ok(None) => return,
+            Err(error) => {
                 debug!(service = %name, error = %error, "status query failed; poll will retry");
-                return;
-            }
-            Err(panic) => {
-                error!(panic = %panic, "status query task panicked");
                 return;
             }
         };
@@ -197,21 +173,11 @@ impl LivenessService {
     }
 
     async fn on_config_changed(self: &Arc<Self>, name: &str) {
-        let repository = Arc::clone(&self.repository);
-        let query_name = name.to_owned();
-        let config = match tauri::async_runtime::spawn_blocking(move || {
-            repository.query_config(&query_name)
-        })
-        .await
-        {
-            Ok(Ok(Some(config))) => config,
-            Ok(Ok(None)) => return,
-            Ok(Err(error)) => {
+        let config = match self.repository.query_config(name).await {
+            Ok(Some(config)) => config,
+            Ok(None) => return,
+            Err(error) => {
                 debug!(service = %name, error = %error, "config query failed; poll will retry");
-                return;
-            }
-            Err(panic) => {
-                error!(panic = %panic, "config query task panicked");
                 return;
             }
         };

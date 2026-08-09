@@ -6,8 +6,8 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 use tracing::debug;
 
 use crate::domain::error::ServiceError;
-use crate::domain::repository::DynServiceRepository;
 use crate::domain::service::{ServiceStartType, ServiceState};
+use crate::queue::bridge::AsyncServiceRepository;
 
 /// Maximum time a restart waits for a service to reach `Stopped` after issuing the stop request.
 const STOP_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -23,19 +23,19 @@ const STOP_POLL_INTERVAL: Duration = Duration::from_millis(250);
 /// Only services that receive an action ever get a lane; the map holds at most
 /// one entry per acted-on service, so it cannot grow unboundedly.
 pub struct ActionService {
-    repository: DynServiceRepository,
+    repository: Arc<AsyncServiceRepository>,
     lanes: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     stop_timeout: Duration,
     stop_poll_interval: Duration,
 }
 
 impl ActionService {
-    pub fn new(repository: DynServiceRepository) -> Self {
+    pub fn new(repository: Arc<AsyncServiceRepository>) -> Self {
         Self::with_durations(repository, STOP_WAIT_TIMEOUT, STOP_POLL_INTERVAL)
     }
 
     fn with_durations(
-        repository: DynServiceRepository,
+        repository: Arc<AsyncServiceRepository>,
         stop_timeout: Duration,
         stop_poll_interval: Duration,
     ) -> Self {
@@ -102,19 +102,11 @@ impl ActionService {
     }
 
     async fn start_unlocked(&self, name: &str) -> Result<(), ServiceError> {
-        let repository = Arc::clone(&self.repository);
-        let name = name.to_owned();
-        tauri::async_runtime::spawn_blocking(move || repository.start_service(&name))
-            .await
-            .map_err(|e| ServiceError::Internal { message: format!("start task panicked: {e}") })?
+        self.repository.start_service(name).await
     }
 
     async fn stop_unlocked(&self, name: &str) -> Result<(), ServiceError> {
-        let repository = Arc::clone(&self.repository);
-        let name = name.to_owned();
-        tauri::async_runtime::spawn_blocking(move || repository.stop_service(&name))
-            .await
-            .map_err(|e| ServiceError::Internal { message: format!("stop task panicked: {e}") })?
+        self.repository.stop_service(name).await
     }
 
     async fn set_start_type_unlocked(
@@ -122,25 +114,11 @@ impl ActionService {
         name: &str,
         start_type: ServiceStartType,
     ) -> Result<(), ServiceError> {
-        let repository = Arc::clone(&self.repository);
-        let name = name.to_owned();
-        tauri::async_runtime::spawn_blocking(move || repository.set_start_type(&name, start_type))
-            .await
-            .map_err(|e| {
-                ServiceError::Internal { message: format!("config change task panicked: {e}") }
-            })?
+        self.repository.set_start_type(name, start_type).await
     }
 
     async fn query_state(&self, name: &str) -> Result<ServiceState, ServiceError> {
-        let repository = Arc::clone(&self.repository);
-        let query_name = name.to_owned();
-        let status = tauri::async_runtime::spawn_blocking(move || {
-            repository.query_service_status(&query_name)
-        })
-        .await
-        .map_err(|e| {
-            ServiceError::Internal { message: format!("status query task panicked: {e}") }
-        })??;
+        let status = self.repository.query_service_status(name).await?;
         status
             .map(|status| status.state)
             .ok_or_else(|| ServiceError::service_not_found(name))
@@ -166,7 +144,7 @@ mod tests {
     use std::sync::Mutex as StdMutex;
 
     use super::*;
-    use crate::domain::repository::ServiceRepository;
+    use crate::domain::repository::{DynServiceRepository, ServiceRepository};
     use crate::domain::service::{ServiceInfo, ServiceRuntimeStatus};
 
     /// Test double recording every repository call it receives.
@@ -257,7 +235,7 @@ mod tests {
         }
     }
 
-    fn test_actions(repository: DynServiceRepository) -> ActionService {
+    fn test_actions(repository: Arc<AsyncServiceRepository>) -> ActionService {
         ActionService::with_durations(
             repository,
             Duration::from_millis(100),
@@ -265,10 +243,16 @@ mod tests {
         )
     }
 
+    fn test_bridge(repository: &Arc<MockRepository>) -> Arc<AsyncServiceRepository> {
+        Arc::new(AsyncServiceRepository::new(
+            Arc::clone(repository) as DynServiceRepository
+        ))
+    }
+
     #[tokio::test]
     async fn start_issues_start_request() {
         let repository = Arc::new(MockRepository::new(ServiceState::Stopped));
-        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        let actions = test_actions(test_bridge(&repository));
         actions.start("svc").await.unwrap();
         assert_eq!(repository.calls(), vec!["start:svc"]);
     }
@@ -276,7 +260,7 @@ mod tests {
     #[tokio::test]
     async fn restart_stops_waits_then_starts() {
         let repository = Arc::new(MockRepository::new(ServiceState::Running));
-        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        let actions = test_actions(test_bridge(&repository));
         actions.restart("svc").await.unwrap();
         assert_eq!(repository.calls(), vec!["stop:svc", "start:svc"]);
     }
@@ -284,7 +268,7 @@ mod tests {
     #[tokio::test]
     async fn restart_skips_stop_when_already_stopped() {
         let repository = Arc::new(MockRepository::new(ServiceState::Stopped));
-        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        let actions = test_actions(test_bridge(&repository));
         actions.restart("svc").await.unwrap();
         assert_eq!(repository.calls(), vec!["start:svc"]);
     }
@@ -293,7 +277,7 @@ mod tests {
     async fn restart_times_out_while_waiting_for_stop() {
         let repository = Arc::new(MockRepository::new(ServiceState::Running));
         repository.stop_never_completes();
-        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        let actions = test_actions(test_bridge(&repository));
         let error = actions.restart("svc").await.unwrap_err();
         assert!(
             matches!(&error, ServiceError::Timeout { service } if service == "svc"),
@@ -304,7 +288,7 @@ mod tests {
     #[tokio::test]
     async fn force_start_sets_manual_before_starting() {
         let repository = Arc::new(MockRepository::new(ServiceState::Stopped));
-        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        let actions = test_actions(test_bridge(&repository));
         actions.force_start("svc").await.unwrap();
         assert_eq!(repository.calls(), vec!["set:Manual:svc", "start:svc"]);
     }
@@ -312,7 +296,7 @@ mod tests {
     #[tokio::test]
     async fn set_start_type_issues_config_change() {
         let repository = Arc::new(MockRepository::new(ServiceState::Running));
-        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        let actions = test_actions(test_bridge(&repository));
         actions.set_start_type("svc", ServiceStartType::Disabled).await.unwrap();
         assert_eq!(repository.calls(), vec!["set:Disabled:svc"]);
     }
@@ -320,7 +304,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_actions_on_same_service_are_sequential() {
         let repository = Arc::new(MockRepository::new(ServiceState::Running));
-        let actions = Arc::new(test_actions(Arc::clone(&repository) as DynServiceRepository));
+        let actions = Arc::new(test_actions(test_bridge(&repository)));
         let first = Arc::clone(&actions);
         let second = Arc::clone(&actions);
         let a = tokio::spawn(async move { first.restart("svc").await });

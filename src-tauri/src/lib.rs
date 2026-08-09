@@ -2,6 +2,7 @@ mod commands;
 mod domain;
 mod liveness;
 mod privilege;
+mod queue;
 mod scm;
 mod state;
 
@@ -16,12 +17,12 @@ use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
-use domain::actions::ActionService;
-use domain::repository::DynServiceRepository;
 use domain::watcher::{NoopServiceWatcher, ServiceWatcher};
 use liveness::cache::ServiceCache;
 use liveness::events::{ServiceConfigChanged, ServiceStatusChanged, ServicesChanged};
 use liveness::service::LivenessService;
+use queue::actions::ActionService;
+use queue::bridge::AsyncServiceRepository;
 use scm::windows::{WindowsServiceRepository, WindowsServiceWatcher};
 use state::{AppState, TauriEventSink};
 
@@ -100,7 +101,9 @@ pub fn run() {
                     Box::new(NoopServiceWatcher)
                 }
             };
-            let repository: DynServiceRepository = Arc::new(WindowsServiceRepository);
+            let repository: Arc<AsyncServiceRepository> = Arc::new(AsyncServiceRepository::new(
+                Arc::new(WindowsServiceRepository),
+            ));
             let actions = Arc::new(ActionService::new(Arc::clone(&repository)));
             let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
             let liveness = LivenessService::new(

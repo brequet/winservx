@@ -18,7 +18,7 @@ Technical decisions: `...\WinServX Technical brainstorming.md` — design inspir
 
 - **Fat backend, thin frontend**: Rust owns all business logic, service state, queue, SCM truth, persistence. Svelte owns only UI state (search text, row expansion, scroll, drawer open). Never put "is this service running" logic in `.svelte`.
 - **State sync**: full snapshot via `get_services` on launch; granular events (`service-status-changed`, `queue-task-updated`) patch individual rows. No diffing/reconciliation layer.
-- **Layering**: `domain` = pure types (no I/O/Tauri/Win32); `scm` = only layer touching `windows-sys`, wraps errors in own `ScmError`; `queue` = Tokio scheduler (per-service sequential lanes, cross-service parallel, `spawn_blocking` for blocking SCM calls); `commands` = thin `#[tauri::command]` layer, only layer aware of `AppHandle`; `state` = `tauri::State` wiring. Idiomatic Rust DI = traits + constructor injection (`Arc<dyn Trait + Send + Sync>`), no DI framework.
+- **Layering**: `domain` = pure types (no I/O/Tauri/Win32); `scm` = only layer touching `windows-sys`, wraps errors in own `ScmError`; `queue` = Tokio scheduler (`ActionService` with per-service sequential lanes, cross-service parallel) plus the `AsyncServiceRepository` bridge — the only place that calls `spawn_blocking`; `commands` = thin `#[tauri::command]` layer, only layer aware of `AppHandle`; `state` = `tauri::State` wiring. Idiomatic Rust DI = traits + constructor injection (`Arc<dyn Trait + Send + Sync>`), no DI framework.
 
 ## Key product behaviors (non-negotiable)
 

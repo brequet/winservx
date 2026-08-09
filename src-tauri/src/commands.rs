@@ -7,6 +7,7 @@ use crate::{
     domain::error::ServiceError,
     domain::service::{ServiceInfo, ServiceStartType},
     privilege,
+    queue::bridge::run_blocking,
     state::AppState,
 };
 
@@ -20,10 +21,8 @@ pub fn is_elevated() -> bool {
 #[tauri::command]
 #[specta::specta]
 pub async fn relaunch_as_elevated(app: tauri::AppHandle) -> Result<(), ServiceError> {
-    let result = tauri::async_runtime::spawn_blocking(privilege::relaunch_elevated)
-        .await
-        .map_err(|e| ServiceError::Internal { message: format!("relaunch task panicked: {e}") })?;
-    if result? == privilege::RelaunchOutcome::Launched {
+    let outcome = run_blocking(privilege::relaunch_elevated).await??;
+    if outcome == privilege::RelaunchOutcome::Launched {
         app.exit(0);
     }
     Ok(())
@@ -42,12 +41,8 @@ pub async fn get_services(state: State<'_, AppState>) -> Result<Vec<ServiceInfo>
 
     // The liveness pipeline has not produced its first snapshot yet; query the
     // SCM directly and seed the cache so the frontend gets an immediate result.
-    let repository = Arc::clone(&state.repository);
+    let result = state.repository.list_services().await;
     let cache = Arc::clone(&state.cache);
-    let result = tauri::async_runtime::spawn_blocking(move || repository.list_services())
-        .await
-        .map_err(|e| ServiceError::Internal { message: format!("background task panicked: {e}") })
-        .and_then(|r| r);
     if let Ok(ref services) = result {
         let mut cache = cache.write().unwrap_or_else(|poisoned| poisoned.into_inner());
         if cache.is_empty() {
