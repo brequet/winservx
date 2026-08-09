@@ -166,6 +166,7 @@
 <style>
 	.table {
 		width: 100%;
+		min-width: 988px;
 		table-layout: fixed;
 		border-collapse: separate;
 		border-spacing: 0;
@@ -178,6 +179,10 @@
 
 	.col-status {
 		width: 110px;
+	}
+
+	.col-display {
+		width: 220px;
 	}
 
 	.col-kind {
@@ -197,7 +202,7 @@
 	}
 
 	.col-actions {
-		width: 150px;
+		width: 160px;
 	}
 
 	thead {
@@ -219,6 +224,7 @@
 		text-align: left;
 		padding: 10px 2px 8px;
 		background: var(--surface);
+		white-space: nowrap;
 	}
 
 	.th-right {

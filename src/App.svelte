@@ -254,6 +254,7 @@
 	.content {
 		flex: 1;
 		min-height: 0;
+		overflow-x: auto;
 		overflow-y: auto;
 		/* eslint-disable-next-line css/use-baseline -- supported in all Tauri webviews */
 		overscroll-behavior: none;
