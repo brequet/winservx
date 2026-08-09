@@ -1,6 +1,7 @@
 mod commands;
 mod domain;
 mod liveness;
+mod privilege;
 mod scm;
 mod state;
 
@@ -32,7 +33,9 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::start_service,
             commands::stop_service,
             commands::restart_service,
-            commands::force_start_service
+            commands::force_start_service,
+            commands::is_elevated,
+            commands::relaunch_as_elevated
         ])
         .events(collect_events![
             ServiceStatusChanged,

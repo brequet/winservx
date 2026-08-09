@@ -8,9 +8,10 @@
 		ServicesChanged
 	} from '$lib/tauri/bindings';
 	import { loadServices, runServiceAction } from '$lib/api/services';
+	import { isElevated, relaunchAsElevated } from '$lib/api/privilege';
 	import { subscribeToLiveness } from '$lib/api/liveness';
 	import { formatApiError } from '$lib/api/errors';
-	import { isErr } from '$lib/result';
+	import { isErr, isOk } from '$lib/result';
 	import type { QueueItem } from '$lib/queue';
 	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	import ServiceTable from '$lib/components/ServiceTable.svelte';
@@ -23,6 +24,9 @@
 	let searchInput: HTMLInputElement | undefined = $state();
 	let queue: QueueItem[] = $state([]);
 	let nextQueueId = $state(1);
+	let elevated = $state<boolean | null>(null);
+	let relaunching = $state(false);
+	let relaunchError: string | null = $state(null);
 	let unlisteners: Array<() => void> = [];
 
 	/** Actions currently in flight, per service name — drives the row spinners. */
@@ -121,8 +125,18 @@
 		searchInput?.focus();
 	}
 
+	async function onRelaunch() {
+		relaunching = true;
+		relaunchError = null;
+		const result = await relaunchAsElevated();
+		relaunching = false;
+		if (isErr(result)) relaunchError = formatApiError(result.error);
+	}
+
 	onMount(async () => {
 		focusSearch();
+		const elevation = await isElevated();
+		if (isOk(elevation)) elevated = elevation.value;
 		unlisteners = await subscribeToLiveness({
 			onStatusChanged,
 			onConfigChanged,
@@ -150,6 +164,19 @@
 />
 
 <main class="page">
+	{#if elevated === false}
+		<div class="elevation-banner" role="note">
+			<span class="elevation-text">
+				running without administrator rights — start/stop/restart may fail
+			</span>
+			{#if relaunchError}
+				<span class="elevation-error">{relaunchError}</span>
+			{/if}
+			<button class="btn btn--primary" onclick={onRelaunch} disabled={relaunching}>
+				{relaunching ? 'relaunching…' : 'relaunch as administrator'}
+			</button>
+		</div>
+	{/if}
 	<div class="toolbar">
 		<span class="px" aria-hidden="true">/</span>
 		<input
@@ -199,6 +226,27 @@
 		gap: 12px;
 		padding: 8px 2px 10px;
 		border-bottom: 2px solid var(--line-strong);
+	}
+
+	.elevation-banner {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 10px;
+		padding: 8px 12px;
+		border: 1px solid var(--color-primary);
+		border-radius: 2px;
+		font-size: 12px;
+		color: var(--text);
+		background: var(--surface-alt);
+	}
+
+	.elevation-banner .btn {
+		margin-left: auto;
+	}
+
+	.elevation-error {
+		color: var(--color-danger);
 	}
 
 	.px {

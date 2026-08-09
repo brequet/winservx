@@ -6,8 +6,28 @@ use tracing::{debug, warn};
 use crate::{
     domain::error::ServiceError,
     domain::service::ServiceInfo,
+    privilege,
     state::AppState,
 };
+
+#[tauri::command]
+#[specta::specta]
+pub fn is_elevated() -> bool {
+    privilege::is_elevated()
+}
+
+/// Relaunches the app with a UAC prompt; the current process exits on success.
+#[tauri::command]
+#[specta::specta]
+pub async fn relaunch_as_elevated(app: tauri::AppHandle) -> Result<(), ServiceError> {
+    let result = tauri::async_runtime::spawn_blocking(privilege::relaunch_elevated)
+        .await
+        .map_err(|e| ServiceError::Internal { message: format!("relaunch task panicked: {e}") })?;
+    if result? == privilege::RelaunchOutcome::Launched {
+        app.exit(0);
+    }
+    Ok(())
+}
 
 #[tauri::command]
 #[specta::specta]
