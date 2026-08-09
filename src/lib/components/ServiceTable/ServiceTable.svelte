@@ -10,69 +10,114 @@
 		stripeClass,
 		statusClass,
 		startupClass,
-		STATE_LABEL
+		STATE_LABEL,
+		sortAfterClick,
+		sortServices,
+		type ColumnVisibility,
+		type SortColumn,
+		type SortState
 	} from './logic';
 
 	let {
 		services,
 		pending,
+		sort,
+		visible,
 		onAction,
-		onStartupChange
+		onStartupChange,
+		onSortChange
 	}: {
 		services: ServiceInfo[];
 		/** Actions currently in flight per service name; at most one per service. */
 		pending: Map<string, QueueAction>;
+		sort: SortState;
+		visible: ColumnVisibility;
 		onAction: (name: string, action: ServiceAction) => void;
 		onStartupChange: (name: string, startType: ServiceStartType) => void;
+		onSortChange: (sort: SortState) => void;
 	} = $props();
+
+	const sorted = $derived(sortServices(services, sort));
+
+	function ariaSort(column: SortColumn): 'ascending' | 'descending' | undefined {
+		if (sort?.column !== column) return undefined;
+		return sort.direction === 'asc' ? 'ascending' : 'descending';
+	}
 </script>
+
+{#snippet sortHeader(column: SortColumn, label: string, right = false)}
+	<th scope="col" class:th-right={right} aria-sort={ariaSort(column)}>
+		<button class="sort-btn" onclick={() => onSortChange(sortAfterClick(sort, column))}>
+			{label}
+			{#if sort?.column === column}
+				<span class="sort-glyph sort-glyph--active" aria-hidden="true">
+					{sort.direction === 'asc' ? '▲' : '▼'}
+				</span>
+			{:else}
+				<span class="sort-glyph" aria-hidden="true">↕</span>
+			{/if}
+		</button>
+	</th>
+{/snippet}
 
 <table class="table">
 	<colgroup>
 		<col class="col-stripe" />
 		<col class="col-status" />
-		<col class="col-display" />
+		{#if visible.displayName}
+			<col class="col-display" />
+		{/if}
 		<col class="col-tech" />
-		<col class="col-startup" />
+		{#if visible.startType}
+			<col class="col-startup" />
+		{/if}
 		<col class="col-actions" />
 	</colgroup>
 	<thead>
 		<tr>
 			<th scope="col" aria-hidden="true"></th>
-			<th scope="col">Status</th>
-			<th scope="col">Display name</th>
-			<th scope="col">Service name</th>
-			<th scope="col" class="th-right">Startup</th>
+			{@render sortHeader('state', 'Status')}
+			{#if visible.displayName}
+				{@render sortHeader('displayName', 'Display name')}
+			{/if}
+			{@render sortHeader('name', 'Service name')}
+			{#if visible.startType}
+				{@render sortHeader('startType', 'Startup', true)}
+			{/if}
 			<th scope="col" class="th-right">Actions</th>
 		</tr>
 	</thead>
 	<tbody>
-		{#each services as service (service.name)}
+		{#each sorted as service (service.name)}
 			{@const rowPending = pending.get(service.name)}
 			<tr>
 				<td class="td-stripe" aria-hidden="true">
 					<span class="stripe {stripeClass(service.state)}"></span>
 				</td>
 				<td class="status {statusClass(service.state)}">{STATE_LABEL[service.state]}</td>
-				<td class="display-name" title={service.displayName}>{service.displayName}</td>
+				{#if visible.displayName}
+					<td class="display-name" title={service.displayName}>{service.displayName}</td>
+				{/if}
 				<td class="tech-name" title={service.name}>{service.name}</td>
-				<td class="startup {startupClass(service.startType)}">
-					{#if rowPending === 'setStartType'}
-						<span class="in-flight">
-							<Spinner />
-						</span>
-					{:else if service.startType && service.startType !== 'unknown'}
-						<Select
-							value={service.startType}
-							onValueChange={(startType) =>
-								onStartupChange(service.name, startType as ServiceStartType)}
-							options={startupOptions(service.kind)}
-							ariaLabel={`startup type of ${service.name}`}
-						/>
-					{:else}
-						unknown
-					{/if}
-				</td>
+				{#if visible.startType}
+					<td class="startup {startupClass(service.startType)}">
+						{#if rowPending === 'setStartType'}
+							<span class="in-flight">
+								<Spinner />
+							</span>
+						{:else if service.startType && service.startType !== 'unknown'}
+							<Select
+								value={service.startType}
+								onValueChange={(startType) =>
+									onStartupChange(service.name, startType as ServiceStartType)}
+								options={startupOptions(service.kind)}
+								ariaLabel={`startup type of ${service.name}`}
+							/>
+						{:else}
+							unknown
+						{/if}
+					</td>
+				{/if}
 				<td class="actions">
 					{#if rowPending && rowPending !== 'setStartType'}
 						<span class="in-flight">
@@ -140,6 +185,42 @@
 
 	.th-right {
 		text-align: right;
+	}
+
+	.sort-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+		padding: 0;
+		border: none;
+		background: none;
+		cursor: pointer;
+	}
+
+	.sort-btn:hover {
+		color: var(--text);
+	}
+
+	.sort-glyph {
+		display: inline-block;
+		width: 9px;
+		font-size: 8px;
+		line-height: 1;
+		text-align: center;
+		opacity: 0.25;
+	}
+
+	.sort-btn:hover .sort-glyph {
+		opacity: 0.8;
+	}
+
+	.sort-glyph--active {
+		opacity: 1;
+		color: var(--accent);
+	}
+
+	.sort-btn:hover .sort-glyph--active {
+		opacity: 1;
 	}
 
 	tbody tr {

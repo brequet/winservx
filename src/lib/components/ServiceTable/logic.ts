@@ -96,3 +96,89 @@ export function startupOptions(kind: ServiceKind): { value: ServiceStartType; la
 		: ['automatic', 'manual', 'disabled'];
 	return values.map((value) => ({ value, label: value }));
 }
+
+export type SortColumn = 'state' | 'displayName' | 'name' | 'startType';
+export type SortDirection = 'asc' | 'desc';
+export type SortState = { column: SortColumn; direction: SortDirection } | null;
+
+export const SORTABLE_COLUMNS: SortColumn[] = ['state', 'displayName', 'name', 'startType'];
+
+export type ColumnId = 'stripe' | 'status' | 'displayName' | 'name' | 'startType' | 'actions';
+export type ColumnVisibility = Record<ColumnId, boolean>;
+
+/** Columns the user may hide from the view; the rest stay fixed. */
+export const HIDEABLE_COLUMNS: ColumnId[] = ['displayName', 'startType'];
+
+export function defaultVisibility(): ColumnVisibility {
+	return {
+		stripe: true,
+		status: true,
+		displayName: true,
+		name: true,
+		startType: true,
+		actions: true
+	};
+}
+
+/** Semantic order for the status column: what's running first, unknown last. */
+const STATE_RANK: Record<ServiceState, number> = {
+	running: 0,
+	startPending: 1,
+	stopPending: 1,
+	continuePending: 1,
+	pausePending: 1,
+	paused: 2,
+	stopped: 3,
+	unknown: 4
+};
+
+/** Semantic order for the startup column: enabled first, disabled last. */
+const STARTUP_RANK: Record<ServiceStartType, number> = {
+	boot: 0,
+	system: 0,
+	automatic: 0,
+	manual: 1,
+	disabled: 2,
+	unknown: 3
+};
+
+/** Clicking a column cycles none → asc → desc → none; switching columns starts at asc. */
+export function sortAfterClick(sort: SortState, column: SortColumn): SortState {
+	if (!sort || sort.column !== column) return { column, direction: 'asc' };
+	return sort.direction === 'asc' ? { column, direction: 'desc' } : null;
+}
+
+function columnValue(service: ServiceInfo, column: SortColumn): string {
+	switch (column) {
+		case 'state':
+			return service.state;
+		case 'displayName':
+			return service.displayName;
+		case 'name':
+			return service.name;
+		case 'startType':
+			return service.startType ?? 'unknown';
+	}
+}
+
+function compare(left: string, right: string, rank?: Record<string, number>): number {
+	if (rank)
+		return (rank[left] ?? Number.MAX_SAFE_INTEGER) - (rank[right] ?? Number.MAX_SAFE_INTEGER);
+	return left.localeCompare(right, undefined, { sensitivity: 'base' });
+}
+
+/**
+ * Sorts a copy of the services; ties keep the incoming (name-ordered) order so
+ * live events never make the table flicker. A null sort returns the input
+ * array untouched (backend order).
+ */
+export function sortServices(services: ServiceInfo[], sort: SortState): ServiceInfo[] {
+	if (!sort) return services;
+	const { column, direction } = sort;
+	const rank = column === 'state' ? STATE_RANK : column === 'startType' ? STARTUP_RANK : undefined;
+	const sign = direction === 'asc' ? 1 : -1;
+	return [...services].sort((left, right) => {
+		const cmp = compare(columnValue(left, column), columnValue(right, column), rank);
+		return cmp === 0 ? left.name.localeCompare(right.name) : cmp * sign;
+	});
+}

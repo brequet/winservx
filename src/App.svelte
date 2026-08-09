@@ -30,17 +30,26 @@
 		settle,
 		shouldAutoDismiss
 	} from '$lib/state/queue';
+	import { loadTablePrefs, saveTablePrefs } from '$lib/state/tablePrefs';
+	import type { ColumnId, ColumnVisibility, SortState } from '$lib/components/ServiceTable/logic';
 	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	import ElevationBanner from '$lib/components/ElevationBanner.svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import ServiceTable from '$lib/components/ServiceTable/ServiceTable.svelte';
 
+	const prefs = loadTablePrefs();
 	let services: ServiceInfo[] = $state([]);
 	let loading = $state(true);
 	let error: string | null = $state(null);
 	let query = $state('');
+	let sort = $state<SortState>(prefs.sort);
+	let visible = $state<ColumnVisibility>(prefs.visible);
 	let queue = $state(createQueueState());
 	let unlisteners: Array<() => void> = [];
+
+	$effect(() => {
+		saveTablePrefs(sort, visible);
+	});
 
 	/** Pending auto-dismiss timers for settled success items. */
 	const autoDismissCancels: Array<() => void> = [];
@@ -82,6 +91,15 @@
 
 	function dismissItem(id: number) {
 		queue = dismiss(queue, id);
+	}
+
+	function onSortChange(next: SortState) {
+		sort = next;
+	}
+
+	function onColumnVisibilityChange(id: ColumnId, checked: boolean) {
+		visible = { ...visible, [id]: checked };
+		if (sort && !checked && sort.column === id) sort = null;
 	}
 
 	/** Success items auto-clear after a short delay; failures persist until dismissed. */
@@ -133,7 +151,7 @@
 
 <main class="page">
 	<ElevationBanner />
-	<Toolbar bind:value={query} />
+	<Toolbar bind:value={query} {visible} {onColumnVisibilityChange} />
 
 	{#if error}
 		<div class="error" role="alert">
@@ -153,8 +171,11 @@
 		<ServiceTable
 			services={filtered}
 			{pending}
+			{sort}
+			{visible}
 			onAction={runAction}
 			onStartupChange={runStartupChange}
+			{onSortChange}
 		/>
 	{/if}
 </main>

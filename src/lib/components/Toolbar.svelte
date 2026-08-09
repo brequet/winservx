@@ -1,8 +1,33 @@
 <script lang="ts">
+	import { DropdownMenu as Bits } from 'bits-ui';
+	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import {
+		HIDEABLE_COLUMNS,
+		type ColumnId,
+		type ColumnVisibility
+	} from '$lib/components/ServiceTable/logic';
 
-	let { value = $bindable('') } = $props();
+	let {
+		value = $bindable(''),
+		visible,
+		onColumnVisibilityChange
+	}: {
+		value: string;
+		visible: ColumnVisibility;
+		onColumnVisibilityChange: (id: ColumnId, checked: boolean) => void;
+	} = $props();
 	let input: HTMLInputElement | undefined = $state();
+	let columnsOpen = $state(false);
+
+	const COLUMN_LABELS: Record<ColumnId, string> = {
+		stripe: 'Status bar',
+		status: 'Status',
+		displayName: 'Display name',
+		name: 'Service name',
+		startType: 'Startup',
+		actions: 'Actions'
+	};
 
 	function focusSearch() {
 		input?.focus();
@@ -34,6 +59,33 @@
 		}}
 	/>
 	<span class="search-hint">esc to clear</span>
+	<DropdownMenu
+		open={columnsOpen}
+		onOpenChange={(value) => (columnsOpen = value)}
+		triggerClass="btn btn--ghost"
+		ariaLabel="toggle column visibility"
+	>
+		{#snippet trigger()}
+			columns
+		{/snippet}
+		{#snippet content()}
+			{#each HIDEABLE_COLUMNS as id (id)}
+				<Bits.CheckboxItem
+					class="dd-item"
+					checked={visible[id]}
+					onCheckedChange={(checked) => onColumnVisibilityChange(id, checked)}
+					closeOnSelect={false}
+				>
+					{#snippet children({ checked })}
+						{COLUMN_LABELS[id]}
+						{#if checked}
+							<span class="dd-check" aria-hidden="true">✓</span>
+						{/if}
+					{/snippet}
+				</Bits.CheckboxItem>
+			{/each}
+		{/snippet}
+	</DropdownMenu>
 	<ThemeToggle />
 </div>
 
