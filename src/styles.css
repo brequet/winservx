@@ -13,12 +13,12 @@
 	--border-strong: #10192b;
 	--ink: #10192b;
 	--dim: #707a8a;
-	--accent: #d8471f;
-	--accent-hover: #b8380f;
+	--accent: #253d8b;
+	--accent-hover: #1c2f6b;
+	--selection: rgba(37, 61, 139, 0.18);
 	--danger: #8a2e22;
 	--danger-hover: #7a281d;
 	--focus: #396cd8;
-	--selection: rgba(216, 71, 31, 0.18);
 
 	/* semantic */
 	--font-mono: 'IBM Plex Mono', 'Cascadia Mono', Consolas, 'Courier New', monospace;
@@ -63,12 +63,12 @@
 		--border-strong: #c3cddb;
 		--ink: #e6ebf2;
 		--dim: #8b95a5;
-		--accent: #ff6a3d;
-		--accent-hover: #ff8a63;
+		--accent: #6d84e0;
+		--accent-hover: #8b9ee8;
+		--selection: rgba(109, 132, 224, 0.25);
 		--danger: #f08d7d;
 		--danger-hover: #f4a294;
 		--focus: #6ea8ff;
-		--selection: rgba(255, 106, 61, 0.25);
 	}
 }
 
@@ -165,6 +165,17 @@ button {
 .btn--ghost:hover:not(:disabled) {
 	--btn-ink: var(--text);
 	--btn-line: var(--line-strong);
+}
+
+.btn--secondary {
+	--btn-ink: var(--color-primary);
+	--btn-line: var(--color-primary);
+}
+
+.btn--secondary:hover:not(:disabled) {
+	--btn-bg: var(--color-primary);
+	--btn-ink: var(--color-primary-contrast);
+	--btn-line: var(--color-primary);
 }
 
 .btn--icon {

@@ -146,7 +146,7 @@
 					{:else}
 						{#each rowActions(service) as rowAction (rowAction.action)}
 							<button
-								class="btn btn--ghost action-btn"
+								class="btn btn--secondary action-btn"
 								title={rowAction.title}
 								onclick={() => onAction(service.name, rowAction.action)}
 							>
