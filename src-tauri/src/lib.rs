@@ -23,6 +23,8 @@ use liveness::events::{ServiceConfigChanged, ServiceStatusChanged, ServicesChang
 use liveness::service::LivenessService;
 use queue::actions::ActionService;
 use queue::bridge::AsyncServiceRepository;
+use queue::events::QueueTaskUpdated;
+use queue::registry::{TaskEventSink, TaskRegistry};
 use scm::windows::{WindowsServiceRepository, WindowsServiceWatcher};
 use state::{AppState, TauriEventSink};
 
@@ -31,18 +33,17 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
         .error_handling(tauri_specta::ErrorHandlingMode::Throw)
         .commands(collect_commands![
             commands::get_services,
-            commands::start_service,
-            commands::stop_service,
-            commands::restart_service,
-            commands::force_start_service,
-            commands::update_startup_type,
+            commands::enqueue_action,
+            commands::get_queue,
+            commands::dismiss_task,
             commands::is_elevated,
             commands::relaunch_as_elevated
         ])
         .events(collect_events![
             ServiceStatusChanged,
             ServiceConfigChanged,
-            ServicesChanged
+            ServicesChanged,
+            QueueTaskUpdated
         ])
 }
 
@@ -107,8 +108,8 @@ pub fn run() {
             let (first_refresh_tx, first_refresh_rx) = tokio::sync::watch::channel(
                 Err(ServiceError::Internal { message: "initial refresh pending".into() }),
             );
-            let actions = Arc::new(ActionService::new(Arc::clone(&repository)));
             let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
+            let registry = Arc::new(TaskRegistry::new(Arc::clone(&sink) as Arc<dyn TaskEventSink>));
             let liveness = LivenessService::new(
                 Arc::clone(&repository),
                 watcher,
@@ -119,7 +120,7 @@ pub fn run() {
             let liveness_handle = liveness.start(signal_rx);
             app.manage(AppState {
                 cache,
-                actions,
+                actions: Arc::new(ActionService::new(repository, registry)),
                 first_refresh: tokio::sync::Mutex::new(first_refresh_rx),
                 _liveness: liveness_handle,
             });

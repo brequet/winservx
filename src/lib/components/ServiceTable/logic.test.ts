@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ServiceInfo } from '$lib/tauri/bindings';
 import {
 	rowActions,
+	isTransitioning,
 	startupOptions,
 	startupClass,
 	statusClass,
@@ -64,6 +65,17 @@ describe('rowActions', () => {
 	it('offers nothing while a state transition is pending', () => {
 		for (const state of ['startPending', 'stopPending', 'continuePending', 'pausePending']) {
 			expect(rowActions(service(state as never, 'manual'))).toEqual([]);
+		}
+	});
+});
+
+describe('isTransitioning', () => {
+	it('flags pending states, not stable ones', () => {
+		for (const state of ['startPending', 'stopPending', 'continuePending', 'pausePending']) {
+			expect(isTransitioning(state as never)).toBe(true);
+		}
+		for (const state of ['running', 'stopped', 'paused', 'unknown']) {
+			expect(isTransitioning(state as never)).toBe(false);
 		}
 	});
 });

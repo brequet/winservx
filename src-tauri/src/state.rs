@@ -8,6 +8,8 @@ use crate::liveness::cache::ServiceCache;
 use crate::liveness::events::LivenessEvent;
 use crate::liveness::service::{EventSink, LivenessHandle};
 use crate::queue::actions::ActionService;
+use crate::queue::events::QueueTaskUpdated;
+use crate::queue::registry::TaskEventSink;
 
 /// Managed Tauri state shared across commands.
 pub struct AppState {
@@ -40,6 +42,14 @@ impl EventSink for TauriEventSink {
         };
         if let Err(error) = result {
             error!(?event, error = %error, "failed to emit liveness event");
+        }
+    }
+}
+
+impl TaskEventSink for TauriEventSink {
+    fn emit(&self, event: QueueTaskUpdated) {
+        if let Err(error) = tauri_specta::Event::emit(&event, &self.app) {
+            error!(?event, error = %error, "failed to emit queue task event");
         }
     }
 }

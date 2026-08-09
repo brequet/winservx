@@ -1,14 +1,18 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { SvelteMap } from 'svelte/reactivity';
 	import type { ServiceAction } from '$lib/queue';
 	import type {
+		QueueTask,
+		QueueTaskUpdated,
 		ServiceConfigChanged,
 		ServiceInfo,
 		ServiceStartType,
 		ServiceStatusChanged,
 		ServicesChanged
 	} from '$lib/tauri/bindings';
-	import { loadServices, runServiceAction, updateStartupType } from '$lib/api/services';
+	import { loadServices } from '$lib/api/services';
+	import { dismissTask, enqueueAction, loadQueue, subscribeToQueue } from '$lib/api/queue';
 	import { subscribeToLiveness } from '$lib/api/liveness';
 	import { formatApiError } from '$lib/api/errors';
 	import { isErr } from '$lib/result';
@@ -22,12 +26,12 @@
 		revertStartType
 	} from '$lib/state/services';
 	import {
+		applyQueueSnapshot,
+		applyTaskChanged,
 		createQueueState,
 		dismiss,
-		enqueue,
 		pendingActions,
 		scheduleSuccessDismiss,
-		settle,
 		shouldAutoDismiss
 	} from '$lib/state/queue';
 	import { loadTablePrefs, saveTablePrefs } from '$lib/state/tablePrefs';
@@ -44,10 +48,16 @@
 	let query = $state('');
 	let sort = $state<SortState>(prefs.sort);
 	let visible = $state<ColumnVisibility>(prefs.visible);
-	let queue = $state(createQueueState());
+	let queue = $state<QueueTask[]>(createQueueState());
 	let unlisteners: Array<() => void> = [];
 	let contentEl: HTMLElement | undefined = $state();
 	let previousQuery = '';
+
+	/** Optimistic startup-type changes, keyed by task id, reverted on task failure. */
+	const optimisticStartTypes = new SvelteMap<
+		number,
+		{ name: string; set: ServiceStartType; previous: ServiceStartType | null }
+	>();
 
 	$effect(() => {
 		saveTablePrefs(sort, visible);
@@ -65,43 +75,55 @@
 	/** Pending auto-dismiss timers for settled success items. */
 	const autoDismissCancels: Array<() => void> = [];
 
-	/** Actions currently in flight, per service name — drives the row spinners. */
-	const pending = $derived(pendingActions(queue.items));
+	/** Tasks in flight per service name — drives the row spinners. */
+	const pending = $derived(pendingActions(queue));
 
 	const filtered = $derived(filterServices(services, query));
 
 	function runAction(name: string, action: ServiceAction) {
-		const { state, id } = enqueue(queue, { serviceName: name, action });
-		queue = state;
-		runServiceAction(name, action).then((result) => {
+		enqueueAction(name, action).then((result) => {
 			if (isErr(result)) {
-				queue = settle(queue, id, { status: 'failed', error: formatApiError(result.error) });
-			} else {
-				queue = settle(queue, id, { status: 'success' });
-				scheduleDismiss(id);
+				console.error('failed to enqueue action', result.error);
+				return;
 			}
+			queue = applyTaskChanged(queue, {
+				id: result.value,
+				serviceName: name,
+				action,
+				status: 'queued',
+				error: null
+			});
 		});
 	}
 
-	/** Optimistically sets a service's startup type; reverts if the change fails. */
+	/** Optimistically sets a service's startup type; reverts when its task fails. */
 	function runStartupChange(name: string, startType: ServiceStartType) {
-		const { state, id } = enqueue(queue, { serviceName: name, action: 'setStartType', startType });
-		queue = state;
 		const optimistic = applyOptimisticStartType(services, name, startType);
 		services = optimistic.next;
-		updateStartupType(name, startType).then((result) => {
+		enqueueAction(name, { setStartType: startType }).then((result) => {
 			if (isErr(result)) {
-				queue = settle(queue, id, { status: 'failed', error: formatApiError(result.error) });
 				services = revertStartType(services, name, startType, optimistic.previous);
-			} else {
-				queue = settle(queue, id, { status: 'success' });
-				scheduleDismiss(id);
+				console.error('failed to enqueue startup change', result.error);
+				return;
 			}
+			optimisticStartTypes.set(result.value, {
+				name,
+				set: startType,
+				previous: optimistic.previous
+			});
+			queue = applyTaskChanged(queue, {
+				id: result.value,
+				serviceName: name,
+				action: { setStartType: startType },
+				status: 'queued',
+				error: null
+			});
 		});
 	}
 
 	function dismissItem(id: number) {
 		queue = dismiss(queue, id);
+		void dismissTask(id);
 	}
 
 	function onSortChange(next: SortState) {
@@ -115,10 +137,29 @@
 
 	/** Success items auto-clear after a short delay; failures persist until dismissed. */
 	function scheduleDismiss(id: number) {
-		const item = queue.items.find((entry) => entry.id === id);
+		const item = queue.find((entry) => entry.id === id);
 		if (item && shouldAutoDismiss(item)) {
 			autoDismissCancels.push(scheduleSuccessDismiss(id, dismissItem));
 		}
+	}
+
+	/** Patches the queue from backend task events; reverts failed startup changes. */
+	function onTaskUpdated(event: QueueTaskUpdated) {
+		const { task } = event;
+		queue = applyTaskChanged(queue, task);
+		if (task.status === 'success') {
+			scheduleDismiss(task.id);
+		} else if (task.status === 'failed' && typeof task.action !== 'string') {
+			revertOptimisticStartType(task.id);
+		}
+	}
+
+	/** Reverts the optimistic startup type of a failed task, if it still holds. */
+	function revertOptimisticStartType(id: number) {
+		const entry = optimisticStartTypes.get(id);
+		if (!entry) return;
+		optimisticStartTypes.delete(id);
+		services = revertStartType(services, entry.name, entry.set, entry.previous);
 	}
 
 	function onStatusChanged(event: ServiceStatusChanged) {
@@ -151,7 +192,12 @@
 			onConfigChanged,
 			onServicesChanged
 		});
+		unlisteners = [...unlisteners, ...(await subscribeToQueue({ onTaskUpdated }))];
 		await load();
+		const queueResult = await loadQueue();
+		if (!isErr(queueResult)) {
+			queue = applyQueueSnapshot(queue, queueResult.value);
+		}
 	});
 
 	onDestroy(() => {
@@ -193,7 +239,7 @@
 	</div>
 </main>
 
-<ActionQueue items={queue.items} onDismiss={dismissItem} />
+<ActionQueue items={queue} onDismiss={dismissItem} />
 
 <style>
 	.layout {

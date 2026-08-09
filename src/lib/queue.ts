@@ -1,33 +1,24 @@
-import type { ServiceStartType } from '$lib/tauri/bindings';
+import type { QueueAction, ServiceStartType } from '$lib/tauri/bindings';
 
-/** The actions a row can request from the backend. */
-export type ServiceAction = 'start' | 'stop' | 'restart' | 'forceStart';
+export type { QueueAction, QueueTask, QueueTaskStatus } from '$lib/tauri/bindings';
 
-/** A row/queue action, including non-runtime changes like startup type. */
-export type QueueAction = ServiceAction | 'setStartType';
+/** Actions a row can request from the backend; never a startup-type change. */
+export type ServiceAction = Exclude<QueueAction, { setStartType: ServiceStartType }>;
 
-export interface QueueItem {
-	id: number;
-	serviceName: string;
-	action: QueueAction;
-	/** Target startup type, present when `action === 'setStartType'`. */
-	startType?: ServiceStartType;
-	status: 'inFlight' | 'success' | 'failed';
-	/** Formatted error message, present when `status === 'failed'`. */
-	error?: string;
-}
-
-export const ACTION_LABEL: Record<QueueAction, string> = {
+export const ACTION_LABEL: Record<ServiceAction, string> = {
 	start: 'start',
 	stop: 'stop',
 	restart: 'restart',
-	forceStart: 'force start',
-	setStartType: 'set startup type'
+	forceStart: 'force start'
 };
 
-/** Label for a queue item, including the target startup type when relevant. */
-export function actionLabel(item: Pick<QueueItem, 'action' | 'startType'>): string {
-	return item.action === 'setStartType' && item.startType
-		? `${ACTION_LABEL.setStartType}: ${item.startType}`
-		: ACTION_LABEL[item.action];
+/** The runtime action of a task, or null for startup-type changes. */
+export function runtimeAction(action: QueueAction): ServiceAction | null {
+	return typeof action === 'string' ? action : null;
+}
+
+/** Label for a task, including the target startup type when relevant. */
+export function actionLabel(action: QueueAction): string {
+	if (typeof action === 'string') return ACTION_LABEL[action];
+	return `set startup type: ${action.setStartType}`;
 }

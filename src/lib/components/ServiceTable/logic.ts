@@ -83,6 +83,18 @@ export function statusClass(state: ServiceState): string {
 	}
 }
 
+/** Service states that are mid-transition; no row actions are valid. */
+const TRANSITIONING_STATES: ServiceState[] = [
+	'startPending',
+	'stopPending',
+	'continuePending',
+	'pausePending'
+];
+
+export function isTransitioning(state: ServiceState): boolean {
+	return TRANSITIONING_STATES.includes(state);
+}
+
 export function startupClass(startType: ServiceStartType | null): string {
 	switch (startType) {
 		case 'disabled':

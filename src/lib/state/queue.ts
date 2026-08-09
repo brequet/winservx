@@ -1,69 +1,43 @@
-import type { ServiceStartType } from '$lib/tauri/bindings';
-import type { QueueAction, QueueItem } from '../queue';
+import type { QueueTask } from '$lib/tauri/bindings';
 
-/** The bottom-drawer action queue: enqueue, settle, dismiss. Owns the ids. */
-export interface QueueState {
-	items: QueueItem[];
-	nextId: number;
-}
-
-export interface NewQueueItem {
-	serviceName: string;
-	action: QueueAction;
-	/** Target startup type, present when `action === 'setStartType'`. */
-	startType?: ServiceStartType;
-}
-
-export interface EnqueueResult {
-	state: QueueState;
-	/** The id assigned to the new item; used to settle it later. */
-	id: number;
-}
+/** The bottom-drawer action queue, a projection of backend task events. */
+export type QueueState = QueueTask[];
 
 /** How long a success item stays visible before it disappears. */
 export const SUCCESS_CLEAR_MS = 2000;
 
 export function createQueueState(): QueueState {
-	return { items: [], nextId: 1 };
+	return [];
 }
 
-export function enqueue(state: QueueState, item: NewQueueItem): EnqueueResult {
-	const id = state.nextId;
-	return {
-		state: {
-			items: [{ id, status: 'inFlight', ...item }, ...state.items],
-			nextId: id + 1
-		},
-		id
-	};
+/** Replaces the queue with the backend snapshot (ordered by id). */
+export function applyQueueSnapshot(_items: QueueTask[], snapshot: QueueTask[]): QueueTask[] {
+	return snapshot;
 }
 
-export function settle(
-	state: QueueState,
-	id: number,
-	outcome: { status: 'success' } | { status: 'failed'; error: string }
-): QueueState {
-	return {
-		...state,
-		items: state.items.map((item) => (item.id === id ? { ...item, ...outcome } : item))
-	};
+/** Upserts a task by id, keeping the array ordered by id (backend order). */
+export function applyTaskChanged(items: QueueTask[], task: QueueTask): QueueTask[] {
+	const next = items.some((item) => item.id === task.id)
+		? items.map((item) => (item.id === task.id ? task : item))
+		: [...items, task];
+	return next.sort((left, right) => left.id - right.id);
 }
 
-export function dismiss(state: QueueState, id: number): QueueState {
-	return { ...state, items: state.items.filter((item) => item.id !== id) };
+export function dismiss(items: QueueTask[], id: number): QueueTask[] {
+	return items.filter((item) => item.id !== id);
 }
 
-/** Actions currently in flight per service name — drives the row spinners. */
-export function pendingActions(items: QueueItem[]): Map<string, QueueAction> {
+/** Tasks in flight (queued or running) per service name — drives the row spinners. */
+export function pendingActions(items: QueueTask[]): Map<string, QueueTask> {
 	return new Map(
 		items
-			.filter((item) => item.status === 'inFlight')
-			.map((item) => [item.serviceName, item.action])
+			.filter((item) => item.status === 'queued' || item.status === 'running')
+			.map((item) => [item.serviceName, item])
 	);
 }
 
 /** Product rule: success items auto-clear, failures persist until dismissed. */
-export function shouldAutoDismiss(item: QueueItem): boolean {
+export function shouldAutoDismiss(item: QueueTask): boolean {
 	return item.status === 'success';
 }
 

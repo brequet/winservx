@@ -1,27 +1,31 @@
 <script lang="ts">
-	import { actionLabel, type QueueItem } from '$lib/queue';
+	import { actionLabel } from '$lib/queue';
+	import type { QueueTask } from '$lib/tauri/bindings';
+	import { formatApiError } from '$lib/api/errors';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 
-	let { items, onDismiss }: { items: QueueItem[]; onDismiss: (id: number) => void } = $props();
+	let { items, onDismiss }: { items: QueueTask[]; onDismiss: (id: number) => void } = $props();
 </script>
 
 {#if items.length > 0}
 	<aside class="queue" aria-label="action queue">
 		<ul class="queue-list">
-			{#each items as item (item.id)}
+			{#each [...items].reverse() as item (item.id)}
 				<li class="queue-item" class:queue-item--failed={item.status === 'failed'}>
 					<span class="queue-id">#{item.id}</span>
-					<span class="queue-action">{actionLabel(item)}</span>
+					<span class="queue-action">{actionLabel(item.action)}</span>
 					<span class="queue-name" title={item.serviceName}>{item.serviceName}</span>
-					{#if item.status === 'inFlight'}
+					{#if item.status === 'queued' || item.status === 'running'}
 						<span class="queue-state">
 							<Spinner />
-							in flight
+							{item.status}
 						</span>
 					{:else if item.status === 'success'}
 						<span class="queue-state">done</span>
 					{:else}
-						<span class="queue-error" title={item.error}>{item.error}</span>
+						<span class="queue-error" title={item.error ? formatApiError(item.error) : undefined}>
+							{item.error ? formatApiError(item.error) : 'failed'}
+						</span>
 						<button
 							class="btn btn--ghost btn--icon queue-dismiss"
 							aria-label="dismiss"

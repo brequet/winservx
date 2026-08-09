@@ -1,7 +1,6 @@
 <script lang="ts">
-	import type { ServiceAction } from '$lib/queue';
-	import { ACTION_LABEL, type QueueAction } from '$lib/queue';
-	import type { ServiceInfo, ServiceStartType } from '$lib/tauri/bindings';
+	import { ACTION_LABEL, runtimeAction, type ServiceAction } from '$lib/queue';
+	import type { QueueTask, ServiceInfo, ServiceStartType } from '$lib/tauri/bindings';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import {
@@ -12,6 +11,7 @@
 		statusClass,
 		startupClass,
 		STATE_LABEL,
+		isTransitioning,
 		sortAfterClick,
 		sortServices,
 		type ColumnVisibility,
@@ -29,8 +29,8 @@
 		onSortChange
 	}: {
 		services: ServiceInfo[];
-		/** Actions currently in flight per service name; at most one per service. */
-		pending: Map<string, QueueAction>;
+		/** Tasks in flight per service name; at most one per service. */
+		pending: Map<string, QueueTask>;
 		sort: SortState;
 		visible: ColumnVisibility;
 		onAction: (name: string, action: ServiceAction) => void;
@@ -103,6 +103,7 @@
 	<tbody>
 		{#each sorted as service (service.name)}
 			{@const rowPending = pending.get(service.name)}
+			{@const rowAction = rowPending ? runtimeAction(rowPending.action) : null}
 			<tr>
 				<td class="td-stripe" aria-hidden="true">
 					<span class="stripe {stripeClass(service.state)}"></span>
@@ -117,7 +118,7 @@
 				<td class="tech-name" title={service.name}>{service.name}</td>
 				{#if visible.startType}
 					<td class="startup {startupClass(service.startType)}">
-						{#if rowPending === 'setStartType'}
+						{#if rowPending && !rowAction}
 							<span class="in-flight">
 								<Spinner />
 							</span>
@@ -138,19 +139,21 @@
 					<td class="pid">{service.pid ?? '—'}</td>
 				{/if}
 				<td class="actions">
-					{#if rowPending && rowPending !== 'setStartType'}
+					{#if rowAction}
 						<span class="in-flight">
 							<Spinner />
-							{ACTION_LABEL[rowPending]}
+							{ACTION_LABEL[rowAction]}
 						</span>
+					{:else if isTransitioning(service.state)}
+						<span class="transitioning">{STATE_LABEL[service.state]}…</span>
 					{:else}
-						{#each rowActions(service) as rowAction (rowAction.action)}
+						{#each rowActions(service) as action (action.action)}
 							<button
 								class="btn btn--secondary action-btn"
-								title={rowAction.title}
-								onclick={() => onAction(service.name, rowAction.action)}
+								title={action.title}
+								onclick={() => onAction(service.name, action.action)}
 							>
-								{rowAction.label}
+								{action.label}
 							</button>
 						{/each}
 					{/if}
@@ -379,6 +382,11 @@
 		gap: 6px;
 		font-size: 11px;
 		color: var(--status-pending);
+	}
+
+	.transitioning {
+		font-size: 11px;
+		color: var(--text-dim);
 	}
 
 	@keyframes blink {
