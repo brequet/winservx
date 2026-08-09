@@ -7,17 +7,20 @@
 :root {
 	color-scheme: light;
 
-	--bg: #ffffff;
-	--bg-alt: #f3f4f6;
-	--border: #d6dae0;
-	--border-strong: #10192b;
-	--ink: #10192b;
-	--dim: #707a8a;
+	--bg: #fcfcfd;
+	--bg-alt: #f9f9fb;
+	--border: #d9d9e0;
+	--border-strong: #1c2024;
+	--ink: #1c2024;
+	--dim: #60646c;
+	--dim-strong: #4b5058;
 	--accent: #253d8b;
 	--accent-hover: #1c2f6b;
 	--selection: rgba(37, 61, 139, 0.18);
-	--danger: #8a2e22;
-	--danger-hover: #7a281d;
+	--danger: #b42318;
+	--danger-hover: #912018;
+	--warning: #8f5f0a;
+	--warning-hover: #7a5108;
 	--focus: #396cd8;
 
 	/* semantic */
@@ -33,6 +36,8 @@
 	--color-primary-contrast: #ffffff;
 	--color-danger: var(--danger);
 	--color-danger-hover: var(--danger-hover);
+	--color-warning: var(--warning);
+	--color-warning-hover: var(--warning-hover);
 	--color-focus: var(--focus);
 
 	/* status */
@@ -40,6 +45,7 @@
 	--status-pending: var(--accent);
 	--status-error: var(--danger);
 	--status-stopped: var(--dim);
+	--startup-disabled: var(--dim-strong);
 }
 
 /* ---------- Tokens: dark ---------- */
@@ -57,17 +63,20 @@
 	:root[data-theme='system'] {
 		color-scheme: dark;
 
-		--bg: #10151c;
-		--bg-alt: #161d26;
-		--border: #242d3a;
-		--border-strong: #c3cddb;
-		--ink: #e6ebf2;
-		--dim: #8b95a5;
+		--bg: #111113;
+		--bg-alt: #18191b;
+		--border: #363a3f;
+		--border-strong: #edeef0;
+		--ink: #edeef0;
+		--dim: #92969d;
+		--dim-strong: #b0b4ba;
 		--accent: #6d84e0;
 		--accent-hover: #8b9ee8;
 		--selection: rgba(109, 132, 224, 0.25);
 		--danger: #f08d7d;
 		--danger-hover: #f4a294;
+		--warning: #e0ab52;
+		--warning-hover: #ecbd6d;
 		--focus: #6ea8ff;
 	}
 }

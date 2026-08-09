@@ -362,7 +362,7 @@
 	}
 
 	.startup--disabled {
-		color: var(--status-error);
+		color: var(--startup-disabled);
 	}
 
 	.actions {
