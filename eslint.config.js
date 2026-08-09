@@ -11,7 +11,14 @@ import { defineConfig } from 'eslint/config';
 export default defineConfig([
 	// Global Ignores (Must be first without other keys)
 	{
-		ignores: ['build/', '.svelte-kit/', 'dist/', 'src-tauri/target/', 'src/lib/tauri/bindings.ts']
+		ignores: [
+			'build/',
+			'.svelte-kit/',
+			'dist/',
+			'src-tauri/target/',
+			'src/lib/tauri/bindings.ts',
+			'dummy-services/'
+		]
 	},
 
 	// Core JS/TS

@@ -1,0 +1,9 @@
+[package]
+name = "dummy-service"
+version = "0.1.0"
+edition = "2021"
+description = "Dummy Windows services for WinServX testing (slow start/stop)"
+
+[dependencies]
+windows-service = "0.8"
+rand = "0.8"

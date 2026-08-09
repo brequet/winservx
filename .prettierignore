@@ -10,3 +10,4 @@ build
 src-tauri
 node_modules
 src/lib/tauri
+dummy-services
