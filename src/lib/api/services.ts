@@ -1,4 +1,4 @@
-import { commands, type ServiceInfo } from '../tauri/bindings';
+import { commands, type ServiceInfo, type ServiceStartType } from '../tauri/bindings';
 import { err, ok, type Result } from '../result';
 import { normalizeError, type ApiError } from './errors';
 
@@ -26,6 +26,17 @@ export async function runServiceAction(
 ): Promise<Result<null, ApiError>> {
 	try {
 		return ok(await ACTION_COMMAND[action](name));
+	} catch (e) {
+		return err(normalizeError(e));
+	}
+}
+
+export async function updateStartupType(
+	name: string,
+	startType: ServiceStartType
+): Promise<Result<null, ApiError>> {
+	try {
+		return ok(await commands.updateStartupType(name, startType));
 	} catch (e) {
 		return err(normalizeError(e));
 	}

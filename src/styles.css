@@ -190,7 +190,7 @@ button {
 	border-color: var(--color-focus);
 }
 
-/* ---------- Dropdown menu (bits-ui) ---------- */
+/* ---------- Dropdown surfaces (bits-ui dropdown menu, select) ---------- */
 
 .dd-content {
 	min-width: 150px;

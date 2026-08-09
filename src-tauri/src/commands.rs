@@ -5,7 +5,7 @@ use tracing::{debug, warn};
 
 use crate::{
     domain::error::ServiceError,
-    domain::service::ServiceInfo,
+    domain::service::{ServiceInfo, ServiceStartType},
     privilege,
     state::AppState,
 };
@@ -96,6 +96,19 @@ pub async fn force_start_service(
     debug!(command = "force_start_service", service = %name, "command started");
     let result = state.actions.force_start(&name).await;
     log_action_result("force_start_service", &name, &result);
+    result
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn update_startup_type(
+    state: State<'_, AppState>,
+    name: String,
+    start_type: ServiceStartType,
+) -> Result<(), ServiceError> {
+    debug!(command = "update_startup_type", service = %name, start_type = ?start_type, "command started");
+    let result = state.actions.set_start_type(&name, start_type).await;
+    log_action_result("update_startup_type", &name, &result);
     result
 }
 

@@ -1,17 +1,25 @@
 <script lang="ts">
 	import type { ServiceAction } from '$lib/api/services';
-	import { ACTION_LABEL } from '$lib/queue';
-	import type { ServiceInfo, ServiceStartType, ServiceState } from '$lib/tauri/bindings';
+	import { ACTION_LABEL, type QueueAction } from '$lib/queue';
+	import type {
+		ServiceInfo,
+		ServiceKind,
+		ServiceStartType,
+		ServiceState
+	} from '$lib/tauri/bindings';
+	import Select from '$lib/components/ui/Select.svelte';
 
 	let {
 		services,
 		pending,
-		onAction
+		onAction,
+		onStartupChange
 	}: {
 		services: ServiceInfo[];
 		/** Actions currently in flight per service name; at most one per service. */
-		pending: Map<string, ServiceAction>;
+		pending: Map<string, QueueAction>;
 		onAction: (name: string, action: ServiceAction) => void;
+		onStartupChange: (name: string, startType: ServiceStartType) => void;
 	} = $props();
 
 	const STATE_LABEL: Record<ServiceState, string> = {
@@ -99,6 +107,16 @@
 				return 'startup--manual';
 		}
 	}
+
+	const DRIVER_KINDS: ServiceKind[] = ['kernelDriver', 'fileSystemDriver', 'recognizerDriver'];
+
+	/** The start types a service can be set to; boot/system only apply to drivers. */
+	function startupOptions(kind: ServiceKind): { value: ServiceStartType; label: string }[] {
+		const values: ServiceStartType[] = DRIVER_KINDS.includes(kind)
+			? ['boot', 'system', 'automatic', 'manual', 'disabled']
+			: ['automatic', 'manual', 'disabled'];
+		return values.map((value) => ({ value, label: value }));
+	}
 </script>
 
 <table class="table">
@@ -131,10 +149,24 @@
 				<td class="display-name" title={service.displayName}>{service.displayName}</td>
 				<td class="tech-name" title={service.name}>{service.name}</td>
 				<td class="startup {startupClass(service.startType)}">
-					{service.startType ?? 'unknown'}
+					{#if rowPending === 'setStartType'}
+						<span class="in-flight">
+							<span class="spinner" aria-hidden="true"></span>
+						</span>
+					{:else if service.startType && service.startType !== 'unknown'}
+						<Select
+							value={service.startType}
+							onValueChange={(startType) =>
+								onStartupChange(service.name, startType as ServiceStartType)}
+							options={startupOptions(service.kind)}
+							ariaLabel={`startup type of ${service.name}`}
+						/>
+					{:else}
+						unknown
+					{/if}
 				</td>
 				<td class="actions">
-					{#if rowPending}
+					{#if rowPending && rowPending !== 'setStartType'}
 						<span class="in-flight">
 							<span class="spinner" aria-hidden="true"></span>
 							{ACTION_LABEL[rowPending]}

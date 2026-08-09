@@ -4,10 +4,11 @@
 	import type {
 		ServiceConfigChanged,
 		ServiceInfo,
+		ServiceStartType,
 		ServiceStatusChanged,
 		ServicesChanged
 	} from '$lib/tauri/bindings';
-	import { loadServices, runServiceAction } from '$lib/api/services';
+	import { loadServices, runServiceAction, updateStartupType } from '$lib/api/services';
 	import { isElevated, relaunchAsElevated } from '$lib/api/privilege';
 	import { subscribeToLiveness } from '$lib/api/liveness';
 	import { formatApiError } from '$lib/api/errors';
@@ -47,6 +48,27 @@
 		runServiceAction(name, action).then((result) => {
 			if (isErr(result)) {
 				settle(id, { status: 'failed', error: formatApiError(result.error) });
+			} else {
+				settle(id, { status: 'success' });
+				setTimeout(() => dismiss(id), SUCCESS_CLEAR_MS);
+			}
+		});
+	}
+
+	/** Optimistically sets a service's startup type; reverts if the change fails. */
+	function runStartupChange(name: string, startType: ServiceStartType) {
+		const id = nextQueueId++;
+		queue = [
+			{ id, serviceName: name, action: 'setStartType', startType, status: 'inFlight' },
+			...queue
+		];
+		const service = services.find((s) => s.name === name);
+		const previous = service?.startType ?? null;
+		if (service) service.startType = startType;
+		updateStartupType(name, startType).then((result) => {
+			if (isErr(result)) {
+				settle(id, { status: 'failed', error: formatApiError(result.error) });
+				if (service?.startType === startType) service.startType = previous;
 			} else {
 				settle(id, { status: 'success' });
 				setTimeout(() => dismiss(id), SUCCESS_CLEAR_MS);
@@ -207,7 +229,12 @@
 			{services.length === 0 ? 'no services found' : 'no services match the search'}
 		</p>
 	{:else}
-		<ServiceTable services={filtered} {pending} onAction={runAction} />
+		<ServiceTable
+			services={filtered}
+			{pending}
+			onAction={runAction}
+			onStartupChange={runStartupChange}
+		/>
 	{/if}
 </main>
 

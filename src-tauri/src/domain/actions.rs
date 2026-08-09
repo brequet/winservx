@@ -76,6 +76,16 @@ impl ActionService {
         self.start_unlocked(name).await
     }
 
+    /// Changes a service's startup type; takes effect the next time it starts.
+    pub async fn set_start_type(
+        &self,
+        name: &str,
+        start_type: ServiceStartType,
+    ) -> Result<(), ServiceError> {
+        let _lane = self.lane(name).await;
+        self.set_start_type_unlocked(name, start_type).await
+    }
+
     /// Acquires this service's lane, creating it on first use.
     ///
     /// Returns an owned guard so the lane's `Arc` stays alive for as long as
@@ -297,6 +307,14 @@ mod tests {
         let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
         actions.force_start("svc").await.unwrap();
         assert_eq!(repository.calls(), vec!["set:Manual:svc", "start:svc"]);
+    }
+
+    #[tokio::test]
+    async fn set_start_type_issues_config_change() {
+        let repository = Arc::new(MockRepository::new(ServiceState::Running));
+        let actions = test_actions(Arc::clone(&repository) as DynServiceRepository);
+        actions.set_start_type("svc", ServiceStartType::Disabled).await.unwrap();
+        assert_eq!(repository.calls(), vec!["set:Disabled:svc"]);
     }
 
     #[tokio::test]

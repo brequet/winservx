@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ACTION_LABEL, type QueueItem } from '$lib/queue';
+	import { actionLabel, type QueueItem } from '$lib/queue';
 
 	let { items, onDismiss }: { items: QueueItem[]; onDismiss: (id: number) => void } = $props();
 </script>
@@ -10,7 +10,7 @@
 			{#each items as item (item.id)}
 				<li class="queue-item" class:queue-item--failed={item.status === 'failed'}>
 					<span class="queue-id">#{item.id}</span>
-					<span class="queue-action">{ACTION_LABEL[item.action]}</span>
+					<span class="queue-action">{actionLabel(item)}</span>
 					<span class="queue-name" title={item.serviceName}>{item.serviceName}</span>
 					{#if item.status === 'inFlight'}
 						<span class="queue-state">

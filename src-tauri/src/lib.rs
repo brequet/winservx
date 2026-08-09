@@ -34,6 +34,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::stop_service,
             commands::restart_service,
             commands::force_start_service,
+            commands::update_startup_type,
             commands::is_elevated,
             commands::relaunch_as_elevated
         ])
