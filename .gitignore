@@ -13,6 +13,7 @@ dist-ssr
 *.local
 
 src/lib/tauri
+dummy-services/target/
 
 # Editor directories and files
 .vscode/*
