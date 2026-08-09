@@ -19,8 +19,10 @@
 		"lint:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
 		"lint": "run-p lint:*",
 		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+		"test:web": "vitest run",
+		"test:web:watch": "vitest",
 		"format": "prettier --write .",
-		"validate": "run-p check lint:* test:rust",
+		"validate": "run-p check lint:* test:rust test:web",
 		"prepare": "husky install"
 	},
 	"dependencies": {
@@ -48,6 +50,7 @@
 		"svelte-eslint-parser": "^1.8.0",
 		"typescript": "~5.9.3",
 		"typescript-eslint": "^8.66.0",
-		"vite": "^8.2.1"
+		"vite": "^8.2.1",
+		"vitest": "^4.1.10"
 	}
 }

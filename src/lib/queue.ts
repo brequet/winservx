@@ -1,5 +1,7 @@
 import type { ServiceStartType } from '$lib/tauri/bindings';
-import type { ServiceAction } from './api/services';
+
+/** The actions a row can request from the backend. */
+export type ServiceAction = 'start' | 'stop' | 'restart' | 'forceStart';
 
 /** A row/queue action, including non-runtime changes like startup type. */
 export type QueueAction = ServiceAction | 'setStartType';

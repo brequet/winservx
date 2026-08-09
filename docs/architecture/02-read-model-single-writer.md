@@ -3,6 +3,17 @@
 Date: 2026-08-09
 Recommendation strength: Strong
 
+## Status
+
+Resolved 2026-08-09 (`58c59db`): implemented Option A — single writer + readiness signal.
+
+- `LivenessService` owns a `watch::Sender<Result<(), ServiceError>>`; `refresh_all`
+  flips it on every attempt (after the cache write on success, with the error on failure).
+- `get_services` awaits the first flip, propagates the error, then reads the cache
+  snapshot. Seeding block and double `is_empty` check removed; the command layer
+  no longer holds the repository, so a second writer is impossible.
+- Tests: signal flips on success, carries the error on failure, converges on retry.
+
 ## Explanation of the issue
 
 `ServiceCache` (`src-tauri/src/liveness/cache.rs`) is the read model for the UI.

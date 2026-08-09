@@ -1,13 +1,17 @@
 <script lang="ts">
-	import type { ServiceAction } from '$lib/api/services';
+	import type { ServiceAction } from '$lib/queue';
 	import { ACTION_LABEL, type QueueAction } from '$lib/queue';
-	import type {
-		ServiceInfo,
-		ServiceKind,
-		ServiceStartType,
-		ServiceState
-	} from '$lib/tauri/bindings';
+	import type { ServiceInfo, ServiceStartType } from '$lib/tauri/bindings';
 	import Select from '$lib/components/ui/Select.svelte';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import {
+		rowActions,
+		startupOptions,
+		stripeClass,
+		statusClass,
+		startupClass,
+		STATE_LABEL
+	} from './logic';
 
 	let {
 		services,
@@ -21,102 +25,6 @@
 		onAction: (name: string, action: ServiceAction) => void;
 		onStartupChange: (name: string, startType: ServiceStartType) => void;
 	} = $props();
-
-	const STATE_LABEL: Record<ServiceState, string> = {
-		running: 'running',
-		stopped: 'stopped',
-		startPending: 'starting',
-		stopPending: 'stopping',
-		continuePending: 'continuing',
-		pausePending: 'pausing',
-		paused: 'paused',
-		unknown: 'unknown'
-	};
-
-	interface RowAction {
-		action: ServiceAction;
-		label: string;
-		title?: string;
-	}
-
-	/** The actions valid for a service's current state; spec: only show what's actually possible. */
-	function rowActions(service: ServiceInfo): RowAction[] {
-		switch (service.state) {
-			case 'running':
-			case 'paused':
-				return [
-					{ action: 'stop', label: 'stop' },
-					{ action: 'restart', label: 'restart' }
-				];
-			case 'stopped':
-				return service.startType === 'disabled'
-					? [
-							{
-								action: 'forceStart',
-								label: 'force start',
-								title: 'disabled — sets startup type to manual, then starts'
-							}
-						]
-					: [{ action: 'start', label: 'start' }];
-			default:
-				return [];
-		}
-	}
-
-	function stripeClass(state: ServiceState): string {
-		switch (state) {
-			case 'running':
-				return 'stripe--running';
-			case 'startPending':
-			case 'stopPending':
-			case 'continuePending':
-			case 'pausePending':
-				return 'stripe--pending';
-			case 'paused':
-				return 'stripe--error';
-			default:
-				return 'stripe--stopped';
-		}
-	}
-
-	function statusClass(state: ServiceState): string {
-		switch (state) {
-			case 'running':
-				return 'status--running';
-			case 'startPending':
-			case 'stopPending':
-			case 'continuePending':
-			case 'pausePending':
-				return 'status--pending';
-			case 'paused':
-				return 'status--error';
-			default:
-				return 'status--stopped';
-		}
-	}
-
-	function startupClass(startType: ServiceStartType | null): string {
-		switch (startType) {
-			case 'disabled':
-				return 'startup--disabled';
-			case 'boot':
-			case 'system':
-			case 'automatic':
-				return 'startup--automatic';
-			default:
-				return 'startup--manual';
-		}
-	}
-
-	const DRIVER_KINDS: ServiceKind[] = ['kernelDriver', 'fileSystemDriver', 'recognizerDriver'];
-
-	/** The start types a service can be set to; boot/system only apply to drivers. */
-	function startupOptions(kind: ServiceKind): { value: ServiceStartType; label: string }[] {
-		const values: ServiceStartType[] = DRIVER_KINDS.includes(kind)
-			? ['boot', 'system', 'automatic', 'manual', 'disabled']
-			: ['automatic', 'manual', 'disabled'];
-		return values.map((value) => ({ value, label: value }));
-	}
 </script>
 
 <table class="table">
@@ -151,7 +59,7 @@
 				<td class="startup {startupClass(service.startType)}">
 					{#if rowPending === 'setStartType'}
 						<span class="in-flight">
-							<span class="spinner" aria-hidden="true"></span>
+							<Spinner />
 						</span>
 					{:else if service.startType && service.startType !== 'unknown'}
 						<Select
@@ -168,7 +76,7 @@
 				<td class="actions">
 					{#if rowPending && rowPending !== 'setStartType'}
 						<span class="in-flight">
-							<span class="spinner" aria-hidden="true"></span>
+							<Spinner />
 							{ACTION_LABEL[rowPending]}
 						</span>
 					{:else}
@@ -341,22 +249,6 @@
 		gap: 6px;
 		font-size: 11px;
 		color: var(--status-pending);
-	}
-
-	.spinner {
-		display: inline-block;
-		width: 10px;
-		height: 10px;
-		border: 1.5px solid var(--line);
-		border-top-color: var(--color-primary);
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 
 	@keyframes blink {

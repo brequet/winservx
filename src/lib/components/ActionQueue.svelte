@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { actionLabel, type QueueItem } from '$lib/queue';
+	import Spinner from '$lib/components/ui/Spinner.svelte';
 
 	let { items, onDismiss }: { items: QueueItem[]; onDismiss: (id: number) => void } = $props();
 </script>
@@ -14,7 +15,7 @@
 					<span class="queue-name" title={item.serviceName}>{item.serviceName}</span>
 					{#if item.status === 'inFlight'}
 						<span class="queue-state">
-							<span class="spinner" aria-hidden="true"></span>
+							<Spinner />
 							in flight
 						</span>
 					{:else if item.status === 'success'}
@@ -106,21 +107,5 @@
 
 	.queue-dismiss {
 		flex-shrink: 0;
-	}
-
-	.spinner {
-		display: inline-block;
-		width: 10px;
-		height: 10px;
-		border: 1.5px solid var(--line);
-		border-top-color: var(--color-primary);
-		border-radius: 50%;
-		animation: spin 0.8s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
 	}
 </style>

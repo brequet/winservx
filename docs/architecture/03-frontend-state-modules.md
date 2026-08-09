@@ -3,6 +3,26 @@
 Date: 2026-08-09
 Recommendation strength: Strong
 
+## Status
+
+Resolved 2026-08-09: implemented Option A — pure frontend state modules + vitest.
+Not committed yet.
+
+- `lib/state/services.ts` — read-model reducers (`applySnapshot`,
+  `applyStatusChanged`, `applyConfigChanged`, `applyServicesChanged`), optimistic
+  start type + revert, `filterServices`. Import only generated types from
+  `lib/tauri/bindings`.
+- `lib/state/queue.ts` — queue reducers owning ids (`enqueue`, `settle`,
+  `dismiss`), `pendingActions`, the auto-dismiss rule (`shouldAutoDismiss`,
+  `scheduleSuccessDismiss`, `SUCCESS_CLEAR_MS`).
+- `lib/components/ServiceTable/logic.ts` — row actions, startup options,
+  state/start class mapping extracted from `ServiceTable.svelte` (template only
+  now). The component moved to its own folder with co-located logic and tests.
+- `App.svelte` — wiring only (~230 lines incl. styles); timers are tracked and
+  cancelled on unmount.
+- vitest (node environment, fake timers where needed); 36 tests over the three
+  modules. `test:web` added to `validate`.
+
 ## Explanation of the issue
 
 `src/App.svelte` is 304 lines. It mixes five responsibilities:

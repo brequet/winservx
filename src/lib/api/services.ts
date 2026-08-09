@@ -1,9 +1,7 @@
 import { commands, type ServiceInfo, type ServiceStartType } from '../tauri/bindings';
 import { err, ok, type Result } from '../result';
+import type { ServiceAction } from '../queue';
 import { normalizeError, type ApiError } from './errors';
-
-/** The actions a row can request from the backend. */
-export type ServiceAction = 'start' | 'stop' | 'restart' | 'forceStart';
 
 const ACTION_COMMAND: Record<ServiceAction, (name: string) => Promise<null>> = {
 	start: (name) => commands.startService(name),

@@ -3,6 +3,16 @@
 Date: 2026-08-09
 Recommendation strength: Strong
 
+## Status
+
+Resolved 2026-08-09 (`4b4ed53`): implemented Option A — one bridge adapter.
+
+- `queue/bridge.rs` — `run_blocking` helper + `AsyncServiceRepository` (7 async
+  methods, single panic → `ServiceError::Internal` mapping).
+- `ActionService` moved from `domain/` to `queue/actions.rs`; `domain` is pure again.
+- All copies removed; `relaunch_as_elevated` shares `run_blocking`.
+- Bridge tests: value/error passthrough and panic mapping.
+
 ## Explanation of the issue
 
 The port `ServiceRepository` (`src-tauri/src/domain/repository.rs`) is synchronous.

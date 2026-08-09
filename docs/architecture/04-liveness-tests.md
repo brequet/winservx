@@ -3,6 +3,18 @@
 Date: 2026-08-09
 Recommendation strength: Worth exploring
 
+## Status
+
+Resolved 2026-08-09 (`d52b3a9`): implemented Option A + B — harness and tests,
+with an injectable poll interval.
+
+- `LivenessConfig { poll_interval }`; production default unchanged.
+- Test harness: recording `EventSink`, scripted repository, noop watcher.
+- Every row of the "Untested behaviors" table below is now covered by a test.
+- The constructor description below predates the fix: the repository collaborator
+  is now `AsyncServiceRepository`, and `refresh_all` also takes the readiness
+  sender introduced by issue 02.
+
 ## Explanation of the issue
 
 `LivenessService` (`src-tauri/src/liveness/service.rs`) runs the poll loop and the

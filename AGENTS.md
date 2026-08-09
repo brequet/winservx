@@ -32,7 +32,7 @@ Technical decisions: `...\WinServX Technical brainstorming.md` — design inspir
 - `pnpm dev` / `pnpm tauri dev` — dev (bindings auto-generated via predev)
 - `pnpm check` — svelte-check; `pnpm build` — full check + build
 - `pnpm lint` — prettier + eslint + clippy (`-D warnings`); `pnpm format` — prettier write
-- `pnpm test:rust` — cargo test; `pnpm validate` — everything
+- `pnpm test:rust` — cargo test; `pnpm test:web` — vitest; `pnpm validate` — everything
 - Commit hooks via husky; don't commit generated bindings (`gen/`) or `dist/`.
 
 ## Code style
