@@ -1,4 +1,4 @@
-import type { ServiceError } from '../tauri/bindings';
+import type { ServiceError, ServiceState } from '../tauri/bindings';
 
 export type ApiError = ServiceError | { kind: 'unknown'; message: string };
 
@@ -15,6 +15,17 @@ export function normalizeError(e: unknown): ApiError {
 	return { kind: 'unknown', message: 'Unknown error' };
 }
 
+const TIMEOUT_VERB: Record<ServiceState, string> = {
+	stopped: 'stop',
+	startPending: 'reach start pending',
+	stopPending: 'reach stop pending',
+	running: 'run',
+	continuePending: 'reach continue pending',
+	pausePending: 'reach pause pending',
+	paused: 'pause',
+	unknown: 'reach a known state'
+};
+
 export function formatApiError(error: ApiError): string {
 	switch (error.kind) {
 		case 'windows':
@@ -22,7 +33,7 @@ export function formatApiError(error: ApiError): string {
 		case 'internal':
 			return `Internal error: ${error.message}`;
 		case 'timeout':
-			return `Timed out waiting for service '${error.service}' to stop`;
+			return `Timed out waiting for service '${error.service}' to ${TIMEOUT_VERB[error.target]}`;
 		case 'unknown':
 			return error.message;
 	}

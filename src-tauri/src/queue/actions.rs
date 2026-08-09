@@ -181,7 +181,10 @@ impl ActionService {
             }
             if tokio::time::Instant::now() >= deadline {
                 debug!(service = name, target = ?target, timeout = ?self.converge_timeout, "state wait timed out");
-                return Err(ServiceError::Timeout { service: name.to_owned() });
+                return Err(ServiceError::Timeout {
+                    service: name.to_owned(),
+                    target,
+                });
             }
             tokio::time::sleep(self.converge_poll_interval).await;
         }
@@ -435,7 +438,7 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].status, QueueTaskStatus::Failed);
         assert!(
-            matches!(&failures[0].error, Some(ServiceError::Timeout { service }) if service == "svc"),
+            matches!(&failures[0].error, Some(ServiceError::Timeout { service, target }) if service == "svc" && *target == ServiceState::Stopped),
             "expected timeout, got {:?}",
             failures[0].error
         );
@@ -454,7 +457,7 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].status, QueueTaskStatus::Failed);
         assert!(
-            matches!(&failures[0].error, Some(ServiceError::Timeout { service }) if service == "svc"),
+            matches!(&failures[0].error, Some(ServiceError::Timeout { service, target }) if service == "svc" && *target == ServiceState::Stopped),
             "expected timeout, got {:?}",
             failures[0].error
         );
@@ -473,7 +476,7 @@ mod tests {
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].status, QueueTaskStatus::Failed);
         assert!(
-            matches!(&failures[0].error, Some(ServiceError::Timeout { service }) if service == "svc"),
+            matches!(&failures[0].error, Some(ServiceError::Timeout { service, target }) if service == "svc" && *target == ServiceState::Running),
             "expected timeout, got {:?}",
             failures[0].error
         );

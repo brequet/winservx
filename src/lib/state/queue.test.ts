@@ -5,6 +5,7 @@ import {
 	applyTaskChanged,
 	createQueueState,
 	dismiss,
+	insertPendingTask,
 	pendingActions,
 	scheduleSuccessDismiss,
 	shouldAutoDismiss,
@@ -42,6 +43,21 @@ describe('applyTaskChanged', () => {
 	it('replaces the whole queue with the backend snapshot', () => {
 		const items = applyTaskChanged(createQueueState(), task(9, 'failed'));
 		expect(applyQueueSnapshot(items, [task(2, 'running')])).toEqual([task(2, 'running')]);
+	});
+});
+
+describe('insertPendingTask', () => {
+	it('inserts a queued item when the backend has not reported the task yet', () => {
+		const items = insertPendingTask(createQueueState(), task(5, 'queued'));
+		expect(items).toEqual([task(5, 'queued')]);
+	});
+
+	it('does not re-insert a stale queued item the backend already completed', () => {
+		const lifecycle = applyTaskChanged(
+			applyTaskChanged(applyTaskChanged(createQueueState(), task(5, 'queued')), task(5, 'running')),
+			task(5, 'success')
+		);
+		expect(insertPendingTask(lifecycle, task(5, 'queued'))).toEqual([task(5, 'success')]);
 	});
 });
 

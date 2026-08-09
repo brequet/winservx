@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
+use crate::domain::service::ServiceState;
+
 /// Error returned by SCM operations, serialized to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize, Type, thiserror::Error)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -9,8 +11,8 @@ pub enum ServiceError {
     Windows { code: u32, message: String },
     #[error("internal error: {message}")]
     Internal { message: String },
-    #[error("timed out waiting for service '{service}' to stop")]
-    Timeout { service: String },
+    #[error("timed out waiting for service '{service}' to reach {target:?}")]
+    Timeout { service: String, target: ServiceState },
 }
 
 impl ServiceError {
@@ -57,9 +59,13 @@ mod tests {
     fn serializes_timeout_error() {
         let value = serde_json::to_value(ServiceError::Timeout {
             service: "redis".into(),
+            target: ServiceState::Stopped,
         })
         .unwrap();
-        assert_eq!(value, serde_json::json!({ "kind": "timeout", "service": "redis" }));
+        assert_eq!(
+            value,
+            serde_json::json!({ "kind": "timeout", "service": "redis", "target": "stopped" })
+        );
     }
 
     #[test]

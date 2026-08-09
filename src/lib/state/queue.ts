@@ -23,6 +23,17 @@ export function applyTaskChanged(items: QueueTask[], task: QueueTask): QueueTask
 	return next.sort((left, right) => left.id - right.id);
 }
 
+/**
+ * Inserts a locally-known task after an invoke resolves, unless the backend
+ * already reported that id. Backend events are authoritative: re-inserting a
+ * stale `queued` item after the lifecycle completed would leave a phantom
+ * entry with a stuck spinner.
+ */
+export function insertPendingTask(items: QueueTask[], task: QueueTask): QueueTask[] {
+	if (items.some((item) => item.id === task.id)) return items;
+	return applyTaskChanged(items, task);
+}
+
 export function dismiss(items: QueueTask[], id: number): QueueTask[] {
 	return items.filter((item) => item.id !== id);
 }

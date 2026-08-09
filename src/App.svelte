@@ -30,6 +30,7 @@
 		applyTaskChanged,
 		createQueueState,
 		dismiss,
+		insertPendingTask,
 		pendingActions,
 		scheduleSuccessDismiss,
 		shouldAutoDismiss
@@ -86,7 +87,7 @@
 				console.error('failed to enqueue action', result.error);
 				return;
 			}
-			queue = applyTaskChanged(queue, {
+			queue = insertPendingTask(queue, {
 				id: result.value,
 				serviceName: name,
 				action,
@@ -111,7 +112,7 @@
 				set: startType,
 				previous: optimistic.previous
 			});
-			queue = applyTaskChanged(queue, {
+			queue = insertPendingTask(queue, {
 				id: result.value,
 				serviceName: name,
 				action: { setStartType: startType },
