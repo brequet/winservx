@@ -16,6 +16,18 @@ use super::events::{LivenessEvent, ServicesChanged};
 /// changes the SCM does not report.
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Timing knobs for the liveness pipeline, injectable for tests.
+#[derive(Debug, Clone)]
+pub struct LivenessConfig {
+    pub poll_interval: Duration,
+}
+
+impl Default for LivenessConfig {
+    fn default() -> Self {
+        Self { poll_interval: POLL_INTERVAL }
+    }
+}
+
 /// Port for delivering liveness events to the frontend. Implemented by a Tauri adapter.
 pub trait EventSink: Send + Sync + 'static {
     fn emit(&self, event: LivenessEvent);
@@ -28,6 +40,7 @@ pub struct LivenessService {
     watcher: Box<dyn ServiceWatcher>,
     cache: Arc<RwLock<ServiceCache>>,
     sink: Arc<dyn EventSink>,
+    poll_interval: Duration,
     /// Readiness signal for `get_services`: carries the outcome of every full
     /// refresh attempt. The cache is written before the signal flips, so the
     /// snapshot is visible as soon as the receiver wakes.
@@ -47,11 +60,23 @@ impl LivenessService {
         sink: Arc<dyn EventSink>,
         first_refresh: watch::Sender<Result<(), ServiceError>>,
     ) -> Self {
+        Self::with_config(repository, watcher, cache, sink, first_refresh, LivenessConfig::default())
+    }
+
+    fn with_config(
+        repository: Arc<AsyncServiceRepository>,
+        watcher: Box<dyn ServiceWatcher>,
+        cache: Arc<RwLock<ServiceCache>>,
+        sink: Arc<dyn EventSink>,
+        first_refresh: watch::Sender<Result<(), ServiceError>>,
+        config: LivenessConfig,
+    ) -> Self {
         Self {
             repository,
             watcher,
             cache,
             sink,
+            poll_interval: config.poll_interval,
             first_refresh,
         }
     }
@@ -73,7 +98,7 @@ impl LivenessService {
 
     async fn poll_loop(self: &Arc<Self>) {
         self.refresh_all().await;
-        let mut interval = tokio::time::interval(POLL_INTERVAL);
+        let mut interval = tokio::time::interval(self.poll_interval);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
@@ -206,6 +231,7 @@ impl LivenessService {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Mutex as StdMutex;
 
     use super::*;
@@ -217,22 +243,76 @@ mod tests {
     use crate::domain::watcher::NoopServiceWatcher;
     use crate::queue::bridge::AsyncServiceRepository;
 
-    struct TestSink;
-
-    impl EventSink for TestSink {
-        fn emit(&self, _event: LivenessEvent) {}
+    /// Records every event it receives.
+    struct RecordingSink {
+        events: StdMutex<Vec<LivenessEvent>>,
     }
 
-    /// Repository whose `list_services` fails until it has been called a given number of times.
-    struct FlakyRepository {
-        failures: StdMutex<u32>,
-    }
-
-    impl FlakyRepository {
-        fn new(failures: u32) -> Self {
+    impl RecordingSink {
+        fn new() -> Self {
             Self {
-                failures: StdMutex::new(failures),
+                events: StdMutex::new(Vec::new()),
             }
+        }
+
+        fn events(&self) -> Vec<LivenessEvent> {
+            self.events.lock().unwrap().clone()
+        }
+    }
+
+    impl EventSink for RecordingSink {
+        fn emit(&self, event: LivenessEvent) {
+            self.events.lock().unwrap().push(event);
+        }
+    }
+
+    /// Repository with scripted responses: snapshots served in order by
+    /// `list_services` (the last one repeats), per-service statuses and configs,
+    /// a status list for the reconciliation poll, and optional failures.
+    struct ScriptedRepository {
+        inner: StdMutex<ScriptedInner>,
+    }
+
+    #[derive(Default)]
+    struct ScriptedInner {
+        snapshots: Vec<Vec<ServiceInfo>>,
+        statuses: HashMap<String, ServiceRuntimeStatus>,
+        configs: HashMap<String, ServiceConfig>,
+        states: Vec<ServiceRuntimeStatus>,
+        list_failures_remaining: u32,
+        list_calls: usize,
+    }
+
+    impl ScriptedRepository {
+        fn new() -> Self {
+            Self {
+                inner: StdMutex::new(ScriptedInner::default()),
+            }
+        }
+
+        fn snapshot(self, snapshot: Vec<ServiceInfo>) -> Self {
+            self.inner.lock().unwrap().snapshots.push(snapshot);
+            self
+        }
+
+        fn status(self, name: &str, status: ServiceRuntimeStatus) -> Self {
+            self.inner.lock().unwrap().statuses.insert(name.to_owned(), status);
+            self
+        }
+
+        fn config(self, name: &str, config: ServiceConfig) -> Self {
+            self.inner.lock().unwrap().configs.insert(name.to_owned(), config);
+            self
+        }
+
+        fn states(self, states: Vec<ServiceRuntimeStatus>) -> Self {
+            self.inner.lock().unwrap().states = states;
+            self
+        }
+
+        fn fail_list_services(self, failures: u32) -> Self {
+            self.inner.lock().unwrap().list_failures_remaining = failures;
+            self
         }
     }
 
@@ -247,29 +327,42 @@ mod tests {
         }
     }
 
-    impl ServiceRepository for FlakyRepository {
+    fn status(name: &str, state: ServiceState, pid: Option<u32>) -> ServiceRuntimeStatus {
+        ServiceRuntimeStatus {
+            name: name.to_owned(),
+            state,
+            pid,
+        }
+    }
+
+    impl ServiceRepository for ScriptedRepository {
         fn list_services(&self) -> Result<Vec<ServiceInfo>, ServiceError> {
-            let mut failures = self.failures.lock().unwrap();
-            if *failures > 0 {
-                *failures -= 1;
+            let mut inner = self.inner.lock().unwrap();
+            if inner.list_failures_remaining > 0 {
+                inner.list_failures_remaining -= 1;
                 return Err(ServiceError::Windows { code: 5, message: "Access is denied".into() });
             }
-            Ok(vec![service("svc", ServiceState::Running)])
+            if inner.snapshots.is_empty() {
+                return Ok(Vec::new());
+            }
+            let index = inner.list_calls.min(inner.snapshots.len() - 1);
+            inner.list_calls += 1;
+            Ok(inner.snapshots[index].clone())
         }
 
         fn list_states(&self) -> Result<Vec<ServiceRuntimeStatus>, ServiceError> {
-            Ok(Vec::new())
+            Ok(self.inner.lock().unwrap().states.clone())
         }
 
         fn query_service_status(
             &self,
-            _name: &str,
+            name: &str,
         ) -> Result<Option<ServiceRuntimeStatus>, ServiceError> {
-            Ok(None)
+            Ok(self.inner.lock().unwrap().statuses.get(name).cloned())
         }
 
-        fn query_config(&self, _name: &str) -> Result<Option<ServiceConfig>, ServiceError> {
-            Ok(None)
+        fn query_config(&self, name: &str) -> Result<Option<ServiceConfig>, ServiceError> {
+            Ok(self.inner.lock().unwrap().configs.get(name).cloned())
         }
 
         fn start_service(&self, _name: &str) -> Result<(), ServiceError> {
@@ -289,65 +382,284 @@ mod tests {
         }
     }
 
-    fn test_liveness(
+    struct Harness {
+        liveness: Arc<LivenessService>,
+        first_refresh: watch::Receiver<Result<(), ServiceError>>,
+        cache: Arc<RwLock<ServiceCache>>,
+        sink: Arc<RecordingSink>,
+        signals: mpsc::Sender<WatcherSignal>,
+        signal_rx: mpsc::Receiver<WatcherSignal>,
+    }
+
+    fn harness(
         repository: Arc<AsyncServiceRepository>,
-    ) -> (Arc<LivenessService>, watch::Receiver<Result<(), ServiceError>>) {
+        config: LivenessConfig,
+    ) -> Harness {
         let cache = Arc::new(RwLock::new(ServiceCache::default()));
+        let sink = Arc::new(RecordingSink::new());
         let (first_refresh_tx, first_refresh_rx) = watch::channel(Err(ServiceError::Internal {
             message: "initial refresh pending".into(),
         }));
-        let liveness = Arc::new(LivenessService::new(
+        let (signal_tx, signal_rx) = mpsc::channel(16);
+        let liveness = Arc::new(LivenessService::with_config(
             repository,
             Box::new(NoopServiceWatcher),
-            cache,
-            Arc::new(TestSink),
+            Arc::clone(&cache),
+            Arc::clone(&sink) as Arc<dyn EventSink>,
             first_refresh_tx,
+            config,
         ));
-        (liveness, first_refresh_rx)
+        Harness {
+            liveness,
+            first_refresh: first_refresh_rx,
+            cache,
+            sink,
+            signals: signal_tx,
+            signal_rx,
+        }
+    }
+
+    fn test_repository(repository: ScriptedRepository) -> Arc<AsyncServiceRepository> {
+        Arc::new(AsyncServiceRepository::new(Arc::new(repository)))
+    }
+
+    async fn wait_for_events(sink: &RecordingSink, count: usize) {
+        if tokio::time::timeout(Duration::from_secs(2), async {
+            while sink.events().len() < count {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .is_err()
+        {
+            panic!("timed out waiting for {count} events, got {:?}", sink.events());
+        }
+    }
+
+    async fn wait_for_ready(first_refresh: &watch::Receiver<Result<(), ServiceError>>) {
+        if tokio::time::timeout(Duration::from_secs(2), async {
+            while first_refresh.borrow().is_err() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .is_err()
+        {
+            panic!("timed out waiting for ready signal, got {:?}", first_refresh.borrow());
+        }
     }
 
     #[tokio::test]
     async fn first_refresh_flips_ready_after_success() {
-        let repository =
-            Arc::new(AsyncServiceRepository::new(Arc::new(FlakyRepository::new(0))));
-        let (liveness, rx) = test_liveness(repository);
+        let harness = harness(
+            test_repository(ScriptedRepository::new().snapshot(vec![service("svc", ServiceState::Running)])),
+            LivenessConfig::default(),
+        );
 
-        liveness.refresh_all().await;
+        harness.liveness.refresh_all().await;
 
-        assert!(rx.has_changed().unwrap_or(false));
-        assert!(rx.borrow().is_ok());
-        let cache = liveness.cache.read().unwrap();
-        let snapshot = cache.snapshot();
+        assert!(harness.first_refresh.has_changed().unwrap_or(false));
+        assert!(harness.first_refresh.borrow().is_ok());
+        let snapshot = harness.cache.read().unwrap().snapshot();
         assert_eq!(snapshot.len(), 1);
         assert_eq!(snapshot[0].name, "svc");
     }
 
     #[tokio::test]
     async fn first_refresh_carries_error_when_refresh_fails() {
-        let repository =
-            Arc::new(AsyncServiceRepository::new(Arc::new(FlakyRepository::new(1))));
-        let (liveness, rx) = test_liveness(repository);
+        let harness = harness(
+            test_repository(ScriptedRepository::new().fail_list_services(1)),
+            LivenessConfig::default(),
+        );
 
-        liveness.refresh_all().await;
+        harness.liveness.refresh_all().await;
 
-        assert!(rx.has_changed().unwrap_or(false));
+        assert!(harness.first_refresh.has_changed().unwrap_or(false));
         assert!(
-            matches!(&*rx.borrow(), Err(ServiceError::Windows { code: 5, .. })),
+            matches!(&*harness.first_refresh.borrow(), Err(ServiceError::Windows { code: 5, .. })),
             "expected access denied, got {:?}",
-            rx.borrow()
+            harness.first_refresh.borrow()
         );
     }
 
     #[tokio::test]
     async fn later_refresh_flips_ready_after_failure() {
-        let repository =
-            Arc::new(AsyncServiceRepository::new(Arc::new(FlakyRepository::new(1))));
-        let (liveness, rx) = test_liveness(repository);
+        let harness = harness(
+            test_repository(
+                ScriptedRepository::new()
+                    .fail_list_services(1)
+                    .snapshot(vec![service("svc", ServiceState::Running)]),
+            ),
+            LivenessConfig::default(),
+        );
 
-        liveness.refresh_all().await;
-        assert!(rx.borrow().is_err());
+        harness.liveness.refresh_all().await;
+        assert!(harness.first_refresh.borrow().is_err());
 
+        harness.liveness.refresh_all().await;
+        assert!(harness.first_refresh.borrow().is_ok());
+    }
+
+    #[tokio::test]
+    async fn initial_population_emits_no_events() {
+        let harness = harness(
+            test_repository(ScriptedRepository::new().snapshot(vec![service("svc", ServiceState::Running)])),
+            LivenessConfig::default(),
+        );
+
+        harness.liveness.refresh_all().await;
+
+        assert!(harness.first_refresh.borrow().is_ok());
+        assert!(harness.sink.events().is_empty(), "expected no events, got {:?}", harness.sink.events());
+    }
+
+    #[tokio::test]
+    async fn status_signal_queries_and_emits_status_event() {
+        let harness = harness(
+            test_repository(ScriptedRepository::new().status(
+                "svc",
+                status("svc", ServiceState::Stopped, Some(5)),
+            )),
+            LivenessConfig::default(),
+        );
+        let Harness { liveness, cache, sink, signals, signal_rx, .. } = harness;
+        cache.write().unwrap().apply_full_snapshot(vec![service("svc", ServiceState::Running)]);
+
+        tokio::spawn(async move { liveness.signal_loop(signal_rx).await });
+        signals.send(WatcherSignal::Status { name: "svc".into() }).await.unwrap();
+
+        wait_for_events(&sink, 1).await;
+        let events = sink.events();
+        assert!(
+            matches!(&events[0], LivenessEvent::Status(event)
+                if event.name == "svc" && event.state == ServiceState::Stopped && event.pid == Some(5)),
+            "expected status event, got {:?}",
+            events[0]
+        );
+        let cached = cache.read().unwrap().snapshot();
+        assert_eq!(cached[0].state, ServiceState::Stopped);
+        assert_eq!(cached[0].pid, Some(5));
+    }
+
+    #[tokio::test]
+    async fn config_signal_queries_and_emits_config_event() {
+        let mut svc = service("svc", ServiceState::Running);
+        svc.start_type = Some(ServiceStartType::Manual);
+        let harness = harness(
+            test_repository(ScriptedRepository::new().config(
+                "svc",
+                ServiceConfig {
+                    display_name: "Svc Display".into(),
+                    start_type: ServiceStartType::Automatic,
+                },
+            )),
+            LivenessConfig::default(),
+        );
+        let Harness { liveness, cache, sink, signals, signal_rx, .. } = harness;
+        cache.write().unwrap().apply_full_snapshot(vec![svc]);
+
+        tokio::spawn(async move { liveness.signal_loop(signal_rx).await });
+        signals.send(WatcherSignal::Config { name: "svc".into() }).await.unwrap();
+
+        wait_for_events(&sink, 1).await;
+        let events = sink.events();
+        assert!(
+            matches!(&events[0], LivenessEvent::Config(event)
+                if event.name == "svc"
+                    && event.display_name == "Svc Display"
+                    && event.start_type == ServiceStartType::Automatic),
+            "expected config event, got {:?}",
+            events[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn database_signal_triggers_full_refresh() {
+        let harness = harness(
+            test_repository(
+                ScriptedRepository::new()
+                    .snapshot(vec![service("a", ServiceState::Running)])
+                    .snapshot(vec![
+                        service("a", ServiceState::Running),
+                        service("b", ServiceState::Stopped),
+                    ]),
+            ),
+            LivenessConfig::default(),
+        );
+        let Harness { liveness, cache, sink, signals, signal_rx, .. } = harness;
+
+        // Startup refresh populates the cache; the signal arrives afterwards.
         liveness.refresh_all().await;
-        assert!(rx.borrow().is_ok());
+        assert!(sink.events().is_empty());
+
+        tokio::spawn(async move { liveness.signal_loop(signal_rx).await });
+        signals.send(WatcherSignal::Database).await.unwrap();
+
+        wait_for_events(&sink, 1).await;
+        let events = sink.events();
+        assert!(
+            matches!(&events[0], LivenessEvent::Services(changed)
+                if changed.added.len() == 1 && changed.added[0].name == "b" && changed.removed.is_empty()),
+            "expected services changed event, got {:?}",
+            events[0]
+        );
+        assert_eq!(cache.read().unwrap().snapshot().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn set_mismatch_triggers_full_refresh_recursion() {
+        let harness = harness(
+            test_repository(
+                ScriptedRepository::new()
+                    .states(vec![status("b", ServiceState::Running, None)])
+                    .snapshot(vec![
+                        service("a", ServiceState::Running),
+                        service("b", ServiceState::Running),
+                    ]),
+            ),
+            LivenessConfig::default(),
+        );
+        harness
+            .cache
+            .write()
+            .unwrap()
+            .apply_full_snapshot(vec![service("a", ServiceState::Running)]);
+
+        harness.liveness.reconcile_poll().await;
+
+        wait_for_events(&harness.sink, 1).await;
+        let events = harness.sink.events();
+        assert!(
+            matches!(&events[0], LivenessEvent::Services(changed)
+                if changed.added.len() == 1 && changed.added[0].name == "b"),
+            "expected services changed event, got {:?}",
+            events[0]
+        );
+        let names: Vec<String> =
+            harness.cache.read().unwrap().snapshot().into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["a", "b"]);
+    }
+
+    #[tokio::test]
+    async fn poll_loop_retries_after_initial_failure() {
+        let harness = harness(
+            test_repository(
+                ScriptedRepository::new()
+                    .fail_list_services(1)
+                    .states(vec![status("svc", ServiceState::Running, None)])
+                    .snapshot(vec![service("svc", ServiceState::Running)]),
+            ),
+            LivenessConfig { poll_interval: Duration::from_millis(20) },
+        );
+
+        tokio::spawn({
+            let liveness = Arc::clone(&harness.liveness);
+            async move { liveness.poll_loop().await }
+        });
+
+        wait_for_ready(&harness.first_refresh).await;
+        let snapshot = harness.cache.read().unwrap().snapshot();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].name, "svc");
     }
 }
