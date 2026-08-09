@@ -122,6 +122,7 @@
 	}
 
 	onMount(async () => {
+		focusSearch();
 		unlisteners = await subscribeToLiveness({
 			onStatusChanged,
 			onConfigChanged,
