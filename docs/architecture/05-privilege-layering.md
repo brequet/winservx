@@ -3,6 +3,15 @@
 Date: 2026-08-09
 Recommendation strength: Speculative
 
+## Status
+
+Resolved 2026-08-09: implemented Option A — one platform area.
+
+- `privilege.rs` moved to `scm/privilege.rs`; `scm` is now the only layer
+  touching `windows`.
+- `lib.rs` module declaration and `commands.rs` imports updated.
+- AGENTS.md rule corrected (`windows` crate, not `windows-sys`).
+
 ## Explanation of the issue
 
 AGENTS.md says the `scm` layer is the only layer that touches Windows APIs:

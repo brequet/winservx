@@ -1,7 +1,6 @@
 mod commands;
 mod domain;
 mod liveness;
-mod privilege;
 mod queue;
 mod scm;
 mod state;

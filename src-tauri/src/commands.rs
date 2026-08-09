@@ -4,8 +4,8 @@ use tracing::{debug, warn};
 use crate::{
     domain::error::ServiceError,
     domain::service::{ServiceInfo, ServiceStartType},
-    privilege,
     queue::bridge::run_blocking,
+    scm::privilege,
     state::AppState,
 };
 
