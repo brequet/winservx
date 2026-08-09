@@ -38,7 +38,7 @@
 	import type { ColumnId, ColumnVisibility, SortState } from '$lib/components/ServiceTable/logic';
 	import ActionQueue from '$lib/components/ActionQueue.svelte';
 	import ElevationBanner from '$lib/components/ElevationBanner.svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
+	import Toolbar from '$lib/components/Toolbar/Toolbar.svelte';
 	import ServiceTable from '$lib/components/ServiceTable/ServiceTable.svelte';
 
 	const prefs = loadTablePrefs();

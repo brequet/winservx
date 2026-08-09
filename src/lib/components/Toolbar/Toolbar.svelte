@@ -2,6 +2,7 @@
 	import { DropdownMenu as Bits } from 'bits-ui';
 	import DropdownMenu from '$lib/components/ui/DropdownMenu.svelte';
 	import ThemeToggle from '$lib/components/ThemeToggle.svelte';
+	import { escapeAction } from './logic';
 	import {
 		HIDEABLE_COLUMNS,
 		type ColumnId,
@@ -65,15 +66,15 @@
 			return;
 		}
 		if (event.key === 'Escape') {
-			if (columnsOpen || isTypingTarget(document.activeElement)) {
-				columnsOpen = false;
-				return;
-			}
-			if (value !== '') {
-				value = '';
-				return;
-			}
-			if (document.activeElement === input) input?.blur();
+			const action = escapeAction({
+				focusedInSearch: document.activeElement === input,
+				hasValue: value !== '',
+				columnsOpen,
+				typingTarget: isTypingTarget(document.activeElement)
+			});
+			if (action === 'clear') value = '';
+			else if (action === 'blur-search') input?.blur();
+			else if (action === 'close-columns') columnsOpen = false;
 			return;
 		}
 		if (!isTypingKey(event) || isTypingTarget(document.activeElement)) return;
