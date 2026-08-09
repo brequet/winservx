@@ -85,7 +85,7 @@ pub fn run() {
         "winservx starting"
     );
 
-    let result = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if let Ok(dir) = app.path().app_log_dir() {
@@ -126,8 +126,12 @@ pub fn run() {
             });
             Ok(())
         })
-        .invoke_handler(specta_builder().invoke_handler())
-        .run(tauri::generate_context!());
+        .invoke_handler(specta_builder().invoke_handler());
+
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(prevent_default_plugin());
+
+    let result = builder.run(tauri::generate_context!());
 
     if let Err(e) = result {
         error!("application failed to run: {e}");
@@ -167,4 +171,17 @@ fn install_panic_hook() {
 fn env_log_dir() -> Option<PathBuf> {
     let app_data = std::env::var_os("APPDATA")?;
     Some(PathBuf::from(app_data).join("fr.requet.winservx").join("logs"))
+}
+
+/// Disables WebView2 browser accelerator keys (F5/Ctrl+R reload, Ctrl+F find, Ctrl+J,
+/// Ctrl+P print, Ctrl+U source, zoom, ...) natively in release builds. Not registered in
+/// debug builds so the dev tools keep their shortcuts.
+#[cfg(not(debug_assertions))]
+fn prevent_default_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
+    use tauri_plugin_prevent_default::{Flags, PlatformOptions};
+
+    tauri_plugin_prevent_default::Builder::new()
+        .with_flags(Flags::keyboard())
+        .platform(PlatformOptions::new().browser_accelerator_keys(false))
+        .build()
 }
