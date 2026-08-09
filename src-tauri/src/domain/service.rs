@@ -45,6 +45,7 @@ pub struct ServiceInfo {
     pub start_type: Option<ServiceStartType>,
     pub kind: ServiceKind,
     pub pid: Option<u32>,
+    pub binary_path: String,
 }
 
 /// Runtime state of a service, reported by lightweight SCM queries.
@@ -60,5 +61,6 @@ pub struct ServiceRuntimeStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceConfig {
     pub display_name: String,
+    pub binary_path: String,
     pub start_type: ServiceStartType,
 }

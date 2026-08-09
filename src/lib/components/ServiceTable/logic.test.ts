@@ -21,7 +21,8 @@ function service(state: ServiceInfo['state'], startType: ServiceInfo['startType'
 		state,
 		startType,
 		kind: 'win32OwnProcess',
-		pid: null
+		pid: null,
+		binaryPath: ''
 	};
 }
 
@@ -33,6 +34,7 @@ function svc(name: string, overrides: Partial<ServiceInfo> = {}): ServiceInfo {
 		startType: 'manual',
 		kind: 'win32OwnProcess',
 		pid: null,
+		binaryPath: '',
 		...overrides
 	};
 }

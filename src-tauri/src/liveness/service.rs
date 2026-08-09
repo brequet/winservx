@@ -324,6 +324,7 @@ mod tests {
             start_type: Some(ServiceStartType::Automatic),
             kind: ServiceKind::Win32OwnProcess,
             pid: None,
+            binary_path: String::new(),
         }
     }
 
@@ -550,6 +551,7 @@ mod tests {
                 "svc",
                 ServiceConfig {
                     display_name: "Svc Display".into(),
+                    binary_path: String::new(),
                     start_type: ServiceStartType::Automatic,
                 },
             )),

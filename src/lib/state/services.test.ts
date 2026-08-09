@@ -23,6 +23,7 @@ function service(name: string, overrides: Partial<ServiceInfo> = {}): ServiceInf
 		startType: 'manual',
 		kind: 'win32OwnProcess',
 		pid: null,
+		binaryPath: '',
 		...overrides
 	};
 }
@@ -169,6 +170,29 @@ describe('filterServices', () => {
 	it('matches display names when the name does not match', () => {
 		const ranked = [service('db', { displayName: 'Web Server' })];
 		expect(filterServices(ranked, 'web').map((s) => s.name)).toEqual(['db']);
+	});
+
+	it('matches the binary path', () => {
+		const ranked = [
+			service('db', { binaryPath: 'C:\\Program Files\\Microsoft SQL Server\\sqlservr.exe' })
+		];
+		expect(filterServices(ranked, 'sqlservr').map((s) => s.name)).toEqual(['db']);
+	});
+
+	it('ranks a name match above a path-only match', () => {
+		const ranked = [
+			service('db', { binaryPath: 'C:\\Program Files\\nodejs\\node.exe' }),
+			service('node-agent', { binaryPath: 'C:\\Program Files\\nssm\\nssm.exe' })
+		];
+		expect(filterServices(ranked, 'node').map((s) => s.name)).toEqual(['node-agent', 'db']);
+	});
+
+	it('ranks a scattered name match above a clean path match', () => {
+		const ranked = [
+			service('db', { binaryPath: 'C:\\Program Files\\nodejs\\node.exe' }),
+			service('n1o2d3e4')
+		];
+		expect(filterServices(ranked, 'node').map((s) => s.name)).toEqual(['n1o2d3e4', 'db']);
 	});
 
 	it('keeps the original order for equal scores', () => {

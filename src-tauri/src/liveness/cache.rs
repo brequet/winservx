@@ -103,6 +103,7 @@ impl ServiceCache {
                     // Display name/kind drift is rare; take fresh values silently.
                     cached.display_name = info.display_name;
                     cached.kind = info.kind;
+                    cached.binary_path = info.binary_path;
                 }
                 Entry::Vacant(vacant) => {
                     change_set.added.push(info.clone());
@@ -148,11 +149,13 @@ impl ServiceCache {
         let cached = self.services.get_mut(name)?;
         if cached.display_name == config.display_name
             && cached.start_type == Some(config.start_type)
+            && cached.binary_path == config.binary_path
         {
             return None;
         }
         cached.display_name = config.display_name.clone();
         cached.start_type = Some(config.start_type);
+        cached.binary_path = config.binary_path;
         Some(ServiceConfigChanged {
             name: name.to_owned(),
             display_name: config.display_name,
@@ -179,6 +182,7 @@ mod tests {
             start_type,
             kind: ServiceKind::Win32OwnProcess,
             pid,
+            binary_path: String::new(),
         }
     }
 
@@ -317,6 +321,7 @@ mod tests {
                     "a",
                     ServiceConfig {
                         display_name: "A".to_owned(),
+                        binary_path: String::new(),
                         start_type: ServiceStartType::Automatic,
                     },
                 )
@@ -328,6 +333,7 @@ mod tests {
                 "a",
                 ServiceConfig {
                     display_name: "Alpha".to_owned(),
+                    binary_path: String::new(),
                     start_type: ServiceStartType::Automatic,
                 },
             )
@@ -340,6 +346,7 @@ mod tests {
                     "ghost",
                     ServiceConfig {
                         display_name: "x".to_owned(),
+                        binary_path: String::new(),
                         start_type: ServiceStartType::Manual,
                     },
                 )

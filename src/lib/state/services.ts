@@ -85,9 +85,11 @@ const PID_BONUS = 900;
 const PID_EXACT_BONUS = 1100;
 
 /**
- * Filters the read model by name, display name or pid, ranked by match
- * quality; a blank query returns all rows in their original order.
- * Equal scores keep the original (alphabetical) order.
+ * Filters the read model by name, display name, pid or binary path, ranked by
+ * match quality; a blank query returns all rows in their original order.
+ * Name/display/pid hits always outrank path-only hits, so a binary fragment
+ * never drowns an exact working-set match. Equal scores keep the original
+ * (alphabetical) order.
  */
 export function filterServices(services: ServiceInfo[], query: string): ServiceInfo[] {
 	const needle = query.trim();
@@ -95,24 +97,47 @@ export function filterServices(services: ServiceInfo[], query: string): ServiceI
 	const numeric = /^\d+$/.test(needle);
 
 	return services
-		.map((service) => ({ service, score: scoreService(service, needle, numeric) }))
-		.filter((entry): entry is { service: ServiceInfo; score: number } => entry.score !== null)
-		.sort((a, b) => b.score - a.score)
+		.map((service) => ({ service, match: scoreService(service, needle, numeric) }))
+		.filter((entry): entry is { service: ServiceInfo; match: ServiceMatch } => entry.match !== null)
+		.sort(
+			(a, b) => Number(b.match.primary) - Number(a.match.primary) || b.match.score - a.match.score
+		)
 		.map((entry) => entry.service);
 }
 
-function scoreService(service: ServiceInfo, query: string, numericQuery: boolean): number | null {
+interface ServiceMatch {
+	score: number;
+	/** True when the query hit name, display name or pid — always outranks a path-only hit. */
+	primary: boolean;
+}
+
+function scoreService(
+	service: ServiceInfo,
+	query: string,
+	numericQuery: boolean
+): ServiceMatch | null {
 	const scores: number[] = [];
+	let primary = false;
 	const name = fuzzyScore(query, service.name);
-	if (name !== null) scores.push(NAME_BONUS + name);
+	if (name !== null) {
+		scores.push(NAME_BONUS + name);
+		primary = true;
+	}
 	const display = fuzzyScore(query, service.displayName);
-	if (display !== null) scores.push(DISPLAY_BONUS + display);
+	if (display !== null) {
+		scores.push(DISPLAY_BONUS + display);
+		primary = true;
+	}
 	if (service.pid !== null) {
 		const pid = String(service.pid);
 		if (pid.includes(query)) {
 			const exact = numericQuery && service.pid === Number(query);
 			scores.push(exact ? PID_EXACT_BONUS : PID_BONUS);
+			primary = true;
 		}
 	}
-	return scores.length === 0 ? null : Math.max(...scores);
+	const path = fuzzyScore(query, service.binaryPath);
+	if (path !== null) scores.push(path);
+	if (scores.length === 0) return null;
+	return { score: Math.max(...scores), primary };
 }

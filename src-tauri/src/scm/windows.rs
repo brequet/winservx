@@ -44,13 +44,17 @@ impl ServiceRepository for WindowsServiceRepository {
         let entries = enumerate_entries(manager)?;
         Ok(entries
             .into_iter()
-            .map(|entry| ServiceInfo {
-                start_type: start_type_of(manager, &entry.name),
-                name: entry.name,
-                display_name: entry.display_name,
-                state: entry.state,
-                kind: entry.kind,
-                pid: entry.pid,
+            .map(|entry| {
+                let (start_type, binary_path) = config_of(manager, &entry.name);
+                ServiceInfo {
+                    start_type,
+                    name: entry.name,
+                    display_name: entry.display_name,
+                    state: entry.state,
+                    kind: entry.kind,
+                    pid: entry.pid,
+                    binary_path,
+                }
             })
             .collect())
     }
@@ -104,8 +108,10 @@ impl ServiceRepository for WindowsServiceRepository {
         let config = query_config_w(service)?;
         let display_name =
             unsafe { config.lpDisplayName.to_string() }.unwrap_or_else(|_| name.to_owned());
+        let binary_path = unsafe { config.lpBinaryPathName.to_string() }.unwrap_or_default();
         Ok(Some(ServiceConfig {
             display_name,
+            binary_path,
             start_type: map_start_type(config.dwStartType),
         }))
     }
@@ -270,26 +276,29 @@ fn enumerate_entries(manager: SC_HANDLE) -> Result<Vec<RawServiceEntry>, Service
     Ok(entries)
 }
 
-/// Queries an individual service's start type. Returns `None` if the service
-/// cannot be opened or queried (e.g. it was deleted mid-enumeration).
-fn start_type_of(manager: SC_HANDLE, name: &str) -> Option<ServiceStartType> {
+/// Queries an individual service's start type and binary path. Returns `None`
+/// if the service cannot be opened or queried (e.g. it was deleted mid-enumeration).
+fn config_of(manager: SC_HANDLE, name: &str) -> (Option<ServiceStartType>, String) {
     let service = match open_service_opt(manager, name, SERVICE_QUERY_CONFIG) {
         Ok(Some(service)) => service,
         Ok(None) => {
             debug!(service = name, "service no longer exists; start type unavailable");
-            return None;
+            return (None, String::new());
         }
         Err(error) => {
             debug!(service = name, error = %error, "cannot open service; start type unavailable");
-            return None;
+            return (None, String::new());
         }
     };
     let _guard = ScHandle(service);
     match query_config_w(service) {
-        Ok(config) => Some(map_start_type(config.dwStartType)),
+        Ok(config) => (
+            Some(map_start_type(config.dwStartType)),
+            unsafe { config.lpBinaryPathName.to_string() }.unwrap_or_default(),
+        ),
         Err(error) => {
             debug!(service = name, error = %error, "cannot query service config; start type unavailable");
-            None
+            (None, String::new())
         }
     }
 }
