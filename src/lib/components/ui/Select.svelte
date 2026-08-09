@@ -34,7 +34,7 @@
 		<span class="select-caret" aria-hidden="true"></span>
 	</Bits.Trigger>
 	<Bits.Portal>
-		<Bits.Content class="dd-content" {side} {align} sideOffset={4}>
+		<Bits.Content class="dd-content" {side} {align} sideOffset={4} preventScroll={false}>
 			<Bits.Viewport class="select-viewport">
 				{#each options as option (option.value)}
 					<Bits.Item

@@ -28,7 +28,7 @@
 		{@render trigger()}
 	</Bits.Trigger>
 	<Bits.Portal>
-		<Bits.Content class="dd-content" {align} {side}>
+		<Bits.Content class="dd-content" {align} {side} preventScroll={false}>
 			{@render content()}
 		</Bits.Content>
 	</Bits.Portal>
