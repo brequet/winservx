@@ -200,11 +200,19 @@ describe('sortAfterClick', () => {
 });
 
 describe('column visibility', () => {
-	it('starts with every column visible', () => {
-		expect(Object.values(defaultVisibility()).every(Boolean)).toBe(true);
+	it('starts with fixed columns visible and the optional ones hidden', () => {
+		const visible = defaultVisibility();
+		expect(visible.stripe).toBe(true);
+		expect(visible.status).toBe(true);
+		expect(visible.displayName).toBe(true);
+		expect(visible.name).toBe(true);
+		expect(visible.startType).toBe(true);
+		expect(visible.actions).toBe(true);
+		expect(visible.kind).toBe(false);
+		expect(visible.pid).toBe(false);
 	});
 
-	it('only allows hiding display name and startup', () => {
-		expect(HIDEABLE_COLUMNS).toEqual(['displayName', 'startType']);
+	it('only allows hiding the optional columns', () => {
+		expect(HIDEABLE_COLUMNS).toEqual(['displayName', 'startType', 'kind', 'pid']);
 	});
 });

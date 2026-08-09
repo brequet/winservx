@@ -6,6 +6,7 @@
 	import Spinner from '$lib/components/ui/Spinner.svelte';
 	import {
 		rowActions,
+		KIND_LABEL,
 		startupOptions,
 		stripeClass,
 		statusClass,
@@ -67,9 +68,15 @@
 		{#if visible.displayName}
 			<col class="col-display" />
 		{/if}
+		{#if visible.kind}
+			<col class="col-kind" />
+		{/if}
 		<col class="col-tech" />
 		{#if visible.startType}
 			<col class="col-startup" />
+		{/if}
+		{#if visible.pid}
+			<col class="col-pid" />
 		{/if}
 		<col class="col-actions" />
 	</colgroup>
@@ -80,9 +87,15 @@
 			{#if visible.displayName}
 				{@render sortHeader('displayName', 'Display name')}
 			{/if}
+			{#if visible.kind}
+				<th scope="col">Kind</th>
+			{/if}
 			{@render sortHeader('name', 'Service name')}
 			{#if visible.startType}
 				{@render sortHeader('startType', 'Startup', true)}
+			{/if}
+			{#if visible.pid}
+				<th scope="col" class="th-right">PID</th>
 			{/if}
 			<th scope="col" class="th-right">Actions</th>
 		</tr>
@@ -97,6 +110,9 @@
 				<td class="status {statusClass(service.state)}">{STATE_LABEL[service.state]}</td>
 				{#if visible.displayName}
 					<td class="display-name" title={service.displayName}>{service.displayName}</td>
+				{/if}
+				{#if visible.kind}
+					<td class="kind" title={service.kind}>{KIND_LABEL[service.kind]}</td>
 				{/if}
 				<td class="tech-name" title={service.name}>{service.name}</td>
 				{#if visible.startType}
@@ -117,6 +133,9 @@
 							unknown
 						{/if}
 					</td>
+				{/if}
+				{#if visible.pid}
+					<td class="pid">{service.pid ?? '—'}</td>
 				{/if}
 				<td class="actions">
 					{#if rowPending && rowPending !== 'setStartType'}
@@ -145,7 +164,8 @@
 	.table {
 		width: 100%;
 		table-layout: fixed;
-		border-collapse: collapse;
+		border-collapse: separate;
+		border-spacing: 0;
 		margin-top: 2px;
 	}
 
@@ -157,6 +177,10 @@
 		width: 110px;
 	}
 
+	.col-kind {
+		width: 90px;
+	}
+
 	.col-tech {
 		width: 210px;
 	}
@@ -165,8 +189,18 @@
 		width: 100px;
 	}
 
+	.col-pid {
+		width: 80px;
+	}
+
 	.col-actions {
 		width: 150px;
+	}
+
+	thead {
+		position: sticky;
+		top: 0;
+		z-index: 1;
 	}
 
 	thead tr {
@@ -181,6 +215,7 @@
 		color: var(--text-dim);
 		text-align: left;
 		padding: 10px 2px 8px;
+		background: var(--surface);
 	}
 
 	.th-right {
@@ -297,6 +332,20 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.kind {
+		font-size: 11.5px;
+		color: var(--text-dim);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.pid {
+		text-align: right;
+		font-size: 11px;
+		color: var(--text-dim);
 	}
 
 	.startup {

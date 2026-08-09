@@ -24,8 +24,10 @@
 		stripe: 'Status bar',
 		status: 'Status',
 		displayName: 'Display name',
+		kind: 'Kind',
 		name: 'Service name',
 		startType: 'Startup',
+		pid: 'PID',
 		actions: 'Actions'
 	};
 

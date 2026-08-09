@@ -149,44 +149,58 @@
 	});
 </script>
 
-<main class="page">
+<main class="layout">
 	<ElevationBanner />
 	<Toolbar bind:value={query} {visible} {onColumnVisibilityChange} />
 
-	{#if error}
-		<div class="error" role="alert">
-			<div>
-				<span class="error-label">failed to load services:</span>
-				<span>{error}</span>
+	<div class="content">
+		{#if error}
+			<div class="error" role="alert">
+				<div>
+					<span class="error-label">failed to load services:</span>
+					<span>{error}</span>
+				</div>
+				<button class="btn btn--ghost" onclick={load}>retry</button>
 			</div>
-			<button class="btn btn--ghost" onclick={load}>retry</button>
-		</div>
-	{:else if loading}
-		<p class="hint">loading services…</p>
-	{:else if filtered.length === 0}
-		<p class="hint">
-			{services.length === 0 ? 'no services found' : 'no services match the search'}
-		</p>
-	{:else}
-		<ServiceTable
-			services={filtered}
-			{pending}
-			{sort}
-			{visible}
-			onAction={runAction}
-			onStartupChange={runStartupChange}
-			{onSortChange}
-		/>
-	{/if}
+		{:else if loading}
+			<p class="hint">loading services…</p>
+		{:else if filtered.length === 0}
+			<p class="hint">
+				{services.length === 0 ? 'no services found' : 'no services match the search'}
+			</p>
+		{:else}
+			<ServiceTable
+				services={filtered}
+				{pending}
+				{sort}
+				{visible}
+				onAction={runAction}
+				onStartupChange={runStartupChange}
+				{onSortChange}
+			/>
+		{/if}
+	</div>
 </main>
 
 <ActionQueue items={queue.items} onDismiss={dismissItem} />
 
 <style>
-	.page {
+	.layout {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
 		max-width: 1100px;
 		margin: 0 auto;
-		padding: 16px 20px 120px;
+		padding: 16px 20px 0;
+	}
+
+	.content {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		/* eslint-disable-next-line css/use-baseline -- supported in all Tauri webviews */
+		overscroll-behavior: none;
+		padding-bottom: 24px;
 	}
 
 	.hint {

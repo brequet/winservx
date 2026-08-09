@@ -81,6 +81,9 @@
 html,
 body {
 	height: 100%;
+	overflow: hidden;
+	/* eslint-disable-next-line css/use-baseline -- supported in all Tauri webviews */
+	overscroll-behavior: none;
 }
 
 body {

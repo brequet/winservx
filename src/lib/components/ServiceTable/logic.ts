@@ -12,6 +12,15 @@ export const STATE_LABEL: Record<ServiceState, string> = {
 	unknown: 'unknown'
 };
 
+export const KIND_LABEL: Record<ServiceKind, string> = {
+	win32OwnProcess: 'own process',
+	win32ShareProcess: 'shared process',
+	kernelDriver: 'kernel driver',
+	fileSystemDriver: 'fs driver',
+	recognizerDriver: 'recognizer',
+	unknown: 'unknown'
+};
+
 export interface RowAction {
 	action: ServiceAction;
 	label: string;
@@ -103,19 +112,22 @@ export type SortState = { column: SortColumn; direction: SortDirection } | null;
 
 export const SORTABLE_COLUMNS: SortColumn[] = ['state', 'displayName', 'name', 'startType'];
 
-export type ColumnId = 'stripe' | 'status' | 'displayName' | 'name' | 'startType' | 'actions';
+export type ColumnId =
+	'stripe' | 'status' | 'displayName' | 'kind' | 'name' | 'startType' | 'pid' | 'actions';
 export type ColumnVisibility = Record<ColumnId, boolean>;
 
 /** Columns the user may hide from the view; the rest stay fixed. */
-export const HIDEABLE_COLUMNS: ColumnId[] = ['displayName', 'startType'];
+export const HIDEABLE_COLUMNS: ColumnId[] = ['displayName', 'startType', 'kind', 'pid'];
 
 export function defaultVisibility(): ColumnVisibility {
 	return {
 		stripe: true,
 		status: true,
 		displayName: true,
+		kind: false,
 		name: true,
 		startType: true,
+		pid: false,
 		actions: true
 	};
 }
