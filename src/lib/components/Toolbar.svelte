@@ -34,18 +34,54 @@
 	function focusSearch() {
 		input?.focus();
 	}
+
+	/** True when the key alone should start or extend a search query. */
+	function isTypingKey(event: KeyboardEvent): boolean {
+		if (event.ctrlKey || event.metaKey || event.altKey) return false;
+		if (event.isComposing) return false;
+		if (event.key.length !== 1) return false;
+		return event.key !== ' ';
+	}
+
+	/** True when typing goes somewhere meaningful (inputs, menus, listboxes). */
+	function isTypingTarget(target: Element | null): boolean {
+		if (!target) return false;
+		if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return true;
+		if (target instanceof HTMLElement && target.isContentEditable) return true;
+		return target.closest('[role="menu"], [role="listbox"]') !== null;
+	}
 </script>
 
 <svelte:window
 	onkeydown={(event) => {
-		if (
-			event.key === '/' &&
-			document.activeElement !== input &&
-			!(document.activeElement instanceof HTMLButtonElement)
-		) {
-			event.preventDefault();
-			focusSearch();
+		if (event.key === '/') {
+			if (
+				document.activeElement !== input &&
+				!(document.activeElement instanceof HTMLButtonElement)
+			) {
+				event.preventDefault();
+				focusSearch();
+			}
+			return;
 		}
+		if (event.key === 'Escape') {
+			if (columnsOpen || isTypingTarget(document.activeElement)) {
+				columnsOpen = false;
+				return;
+			}
+			if (value !== '') {
+				value = '';
+				return;
+			}
+			if (document.activeElement === input) input?.blur();
+			return;
+		}
+		if (!isTypingKey(event) || isTypingTarget(document.activeElement)) return;
+		event.preventDefault();
+		columnsOpen = false;
+		value = event.key;
+		focusSearch();
+		queueMicrotask(() => input?.setSelectionRange(value.length, value.length));
 	}}
 />
 
@@ -56,11 +92,8 @@
 		bind:this={input}
 		bind:value
 		placeholder="search name, display name, pid…"
-		onkeydown={(event) => {
-			if (event.key === 'Escape') value = '';
-		}}
 	/>
-	<span class="search-hint">esc to clear</span>
+	<span class="search-hint">esc clears · / focuses</span>
 	<DropdownMenu
 		open={columnsOpen}
 		onOpenChange={(value) => (columnsOpen = value)}

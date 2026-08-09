@@ -1,3 +1,4 @@
+import { fuzzyScore } from '$lib/search/fuzzy';
 import type {
 	ServiceConfigChanged,
 	ServiceInfo,
@@ -78,14 +79,40 @@ export function revertStartType(
 	);
 }
 
-/** Filters the read model by name, display name or pid; a blank query returns all. */
+const NAME_BONUS = 1000;
+const DISPLAY_BONUS = 800;
+const PID_BONUS = 900;
+const PID_EXACT_BONUS = 1100;
+
+/**
+ * Filters the read model by name, display name or pid, ranked by match
+ * quality; a blank query returns all rows in their original order.
+ * Equal scores keep the original (alphabetical) order.
+ */
 export function filterServices(services: ServiceInfo[], query: string): ServiceInfo[] {
-	const needle = query.trim().toLowerCase();
+	const needle = query.trim();
 	if (needle === '') return services;
-	return services.filter(
-		(service) =>
-			service.name.toLowerCase().includes(needle) ||
-			service.displayName.toLowerCase().includes(needle) ||
-			String(service.pid ?? '').includes(needle)
-	);
+	const numeric = /^\d+$/.test(needle);
+
+	return services
+		.map((service) => ({ service, score: scoreService(service, needle, numeric) }))
+		.filter((entry): entry is { service: ServiceInfo; score: number } => entry.score !== null)
+		.sort((a, b) => b.score - a.score)
+		.map((entry) => entry.service);
+}
+
+function scoreService(service: ServiceInfo, query: string, numericQuery: boolean): number | null {
+	const scores: number[] = [];
+	const name = fuzzyScore(query, service.name);
+	if (name !== null) scores.push(NAME_BONUS + name);
+	const display = fuzzyScore(query, service.displayName);
+	if (display !== null) scores.push(DISPLAY_BONUS + display);
+	if (service.pid !== null) {
+		const pid = String(service.pid);
+		if (pid.includes(query)) {
+			const exact = numericQuery && service.pid === Number(query);
+			scores.push(exact ? PID_EXACT_BONUS : PID_BONUS);
+		}
+	}
+	return scores.length === 0 ? null : Math.max(...scores);
 }

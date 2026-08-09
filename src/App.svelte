@@ -46,9 +46,20 @@
 	let visible = $state<ColumnVisibility>(prefs.visible);
 	let queue = $state(createQueueState());
 	let unlisteners: Array<() => void> = [];
+	let contentEl: HTMLElement | undefined = $state();
+	let previousQuery = '';
 
 	$effect(() => {
 		saveTablePrefs(sort, visible);
+	});
+
+	/** Scrolls back to the top only when the search query actually changes. */
+	$effect(() => {
+		const current = query;
+		if (current !== previousQuery) {
+			previousQuery = current;
+			contentEl?.scrollTo({ top: 0 });
+		}
 	});
 
 	/** Pending auto-dismiss timers for settled success items. */
@@ -153,7 +164,7 @@
 	<ElevationBanner />
 	<Toolbar bind:value={query} {visible} {onColumnVisibilityChange} />
 
-	<div class="content">
+	<div class="content" bind:this={contentEl}>
 		{#if error}
 			<div class="error" role="alert">
 				<div>

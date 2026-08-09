@@ -144,4 +144,38 @@ describe('filterServices', () => {
 	it('matches nothing for an unknown needle', () => {
 		expect(filterServices(rows, 'zzz')).toEqual([]);
 	});
+
+	it('ranks prefix matches above infix matches', () => {
+		const ranked = [
+			service('foo-cache', { displayName: 'Foo Cache' }),
+			service('cacheful', { displayName: 'Cache Ful' })
+		];
+		expect(filterServices(ranked, 'cache').map((s) => s.name)).toEqual(['cacheful', 'foo-cache']);
+	});
+
+	it('matches through gaps and separators', () => {
+		const ranked = [service('mssqlserver'), service('sql-server-one')];
+		expect(filterServices(ranked, 'sqlsrv').map((s) => s.name)).toEqual([
+			'sql-server-one',
+			'mssqlserver'
+		]);
+	});
+
+	it('ranks an exact pid match above name matches', () => {
+		const ranked = [service('svc42', { pid: 1042 }), service('db', { pid: 42 })];
+		expect(filterServices(ranked, '42').map((s) => s.name)).toEqual(['db', 'svc42']);
+	});
+
+	it('matches display names when the name does not match', () => {
+		const ranked = [service('db', { displayName: 'Web Server' })];
+		expect(filterServices(ranked, 'web').map((s) => s.name)).toEqual(['db']);
+	});
+
+	it('keeps the original order for equal scores', () => {
+		const ranked = [
+			service('a1', { displayName: 'Common Display' }),
+			service('a2', { displayName: 'Common Display' })
+		];
+		expect(filterServices(ranked, 'common').map((s) => s.name)).toEqual(['a1', 'a2']);
+	});
 });
