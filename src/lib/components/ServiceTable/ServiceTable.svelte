@@ -3,6 +3,7 @@
 	import type { QueueTask, ServiceInfo, ServiceStartType } from '$lib/tauri/bindings';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Spinner from '$lib/components/ui/Spinner.svelte';
+	import ActionMenu from './ActionMenu.svelte';
 	import {
 		rowActions,
 		KIND_LABEL,
@@ -149,24 +150,27 @@
 					<td class="pid">{service.pid ?? '—'}</td>
 				{/if}
 				<td class="actions">
-					{#if rowAction}
-						<span class="in-flight">
-							<Spinner />
-							{ACTION_LABEL[rowAction]}
-						</span>
-					{:else if isTransitioning(service.state)}
-						<span class="transitioning">{STATE_LABEL[service.state]}…</span>
-					{:else}
-						{#each rowActions(service) as action (action.action)}
-							<button
-								class="btn btn--secondary action-btn"
-								title={action.title}
-								onclick={() => onAction(service.name, action.action)}
-							>
-								{action.label}
-							</button>
-						{/each}
-					{/if}
+					<div class="action-items">
+						{#if rowAction}
+							<span class="in-flight">
+								<Spinner />
+								{ACTION_LABEL[rowAction]}
+							</span>
+						{:else if isTransitioning(service.state)}
+							<span class="transitioning">{STATE_LABEL[service.state]}…</span>
+						{:else}
+							{#each rowActions(service) as action (action.action)}
+								<button
+									class="btn btn--secondary action-btn"
+									title={action.title}
+									onclick={() => onAction(service.name, action.action)}
+								>
+									{action.label}
+								</button>
+							{/each}
+						{/if}
+						<ActionMenu {service} />
+					</div>
 				</td>
 			</tr>
 		{/each}
@@ -176,7 +180,7 @@
 <style>
 	.table {
 		width: 100%;
-		min-width: 1098px;
+		min-width: 0;
 		table-layout: fixed;
 		border-collapse: separate;
 		border-spacing: 0;
@@ -398,10 +402,17 @@
 		white-space: nowrap;
 	}
 
+	.action-items {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 6px;
+	}
+
 	.action-btn {
+		height: 20px;
 		padding: 1px 8px;
 		font-size: 11px;
-		margin-left: 6px;
 	}
 
 	.in-flight {
