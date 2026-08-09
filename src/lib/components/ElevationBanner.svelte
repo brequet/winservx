@@ -23,14 +23,22 @@
 </script>
 
 {#if elevated === false}
-	<div class="elevation-banner" role="note">
-		<span class="elevation-text">
-			running without administrator rights — start/stop/restart may fail
-		</span>
-		{#if relaunchError}
-			<span class="elevation-error">{relaunchError}</span>
-		{/if}
-		<button class="btn btn--primary" onclick={onRelaunch} disabled={relaunching}>
+	<div class="elevation-banner" role="status" aria-labelledby="elevation-warning-title">
+		<div class="elevation-content">
+			<strong id="elevation-warning-title" class="elevation-title">
+				not running as administrator
+			</strong>
+			<span class="elevation-text">start/stop/restart may fail</span>
+			{#if relaunchError}
+				<span class="elevation-error" role="alert">{relaunchError}</span>
+			{/if}
+		</div>
+		<button
+			class="btn btn--secondary"
+			onclick={onRelaunch}
+			disabled={relaunching}
+			aria-busy={relaunching}
+		>
 			{relaunching ? 'relaunching…' : 'relaunch as administrator'}
 		</button>
 	</div>
@@ -42,12 +50,31 @@
 		align-items: center;
 		gap: 12px;
 		margin-top: 10px;
-		padding: 8px 12px;
-		border: 1px solid var(--color-primary);
+		padding: 7px 10px 7px 12px;
+		border: 1px solid var(--line);
+		border-left: 3px solid var(--color-warning);
 		border-radius: 2px;
 		font-size: 12px;
 		color: var(--text);
-		background: var(--surface-alt);
+		background: var(--color-warning-surface);
+	}
+
+	.elevation-content {
+		display: flex;
+		flex: 1 1 auto;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0 8px;
+		min-width: 0;
+	}
+
+	.elevation-title {
+		font-weight: 600;
+		color: var(--color-warning);
+	}
+
+	.elevation-text {
+		color: var(--text-dim);
 	}
 
 	.elevation-banner .btn {
@@ -55,6 +82,20 @@
 	}
 
 	.elevation-error {
+		flex-basis: 100%;
 		color: var(--color-danger);
+	}
+
+	@media (max-width: 600px) {
+		.elevation-banner {
+			align-items: flex-start;
+			flex-wrap: wrap;
+		}
+
+		.elevation-banner .btn {
+			width: 100%;
+			margin-left: 0;
+			justify-content: center;
+		}
 	}
 </style>

@@ -19,8 +19,9 @@
 	--selection: rgba(37, 61, 139, 0.18);
 	--danger: #b42318;
 	--danger-hover: #912018;
-	--warning: #8f5f0a;
-	--warning-hover: #7a5108;
+	--warning: #8f661f;
+	--warning-hover: #765316;
+	--warning-surface: #fffaf0;
 	--focus: #396cd8;
 
 	/* semantic */
@@ -38,6 +39,7 @@
 	--color-danger-hover: var(--danger-hover);
 	--color-warning: var(--warning);
 	--color-warning-hover: var(--warning-hover);
+	--color-warning-surface: var(--warning-surface);
 	--color-focus: var(--focus);
 
 	/* status */
@@ -75,8 +77,9 @@
 		--selection: rgba(109, 132, 224, 0.25);
 		--danger: #f08d7d;
 		--danger-hover: #f4a294;
-		--warning: #e0ab52;
-		--warning-hover: #ecbd6d;
+		--warning: #d6a64c;
+		--warning-hover: #e5b962;
+		--warning-surface: #211d16;
 		--focus: #6ea8ff;
 	}
 }
