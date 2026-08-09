@@ -28,6 +28,7 @@
 		kind: 'Kind',
 		name: 'Service name',
 		startType: 'Startup',
+		startName: 'Log on as',
 		pid: 'PID',
 		actions: 'Actions'
 	};

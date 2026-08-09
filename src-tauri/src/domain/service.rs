@@ -46,6 +46,8 @@ pub struct ServiceInfo {
     pub kind: ServiceKind,
     pub pid: Option<u32>,
     pub binary_path: String,
+    /// Account the service runs under (`LocalSystem`, `NT AUTHORITY\NetworkService`, …).
+    pub start_name: Option<String>,
 }
 
 /// Runtime state of a service, reported by lightweight SCM queries.

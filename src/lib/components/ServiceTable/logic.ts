@@ -21,6 +21,25 @@ export const KIND_LABEL: Record<ServiceKind, string> = {
 	unknown: 'unknown'
 };
 
+/** Friendly labels for the well-known SCM service accounts; others pass through. */
+export function logonLabel(startName: string | null): string {
+	if (!startName) return '—';
+	switch (startName) {
+		case 'LocalSystem':
+			return 'Local System';
+		case 'NT AUTHORITY\\LocalService':
+		case '.\\LocalService':
+		case 'LocalService':
+			return 'Local Service';
+		case 'NT AUTHORITY\\NetworkService':
+		case '.\\NetworkService':
+		case 'NetworkService':
+			return 'Network Service';
+		default:
+			return startName;
+	}
+}
+
 export interface RowAction {
 	action: ServiceAction;
 	label: string;
@@ -125,11 +144,25 @@ export type SortState = { column: SortColumn; direction: SortDirection } | null;
 export const SORTABLE_COLUMNS: SortColumn[] = ['state', 'displayName', 'name', 'startType'];
 
 export type ColumnId =
-	'stripe' | 'status' | 'displayName' | 'kind' | 'name' | 'startType' | 'pid' | 'actions';
+	| 'stripe'
+	| 'status'
+	| 'displayName'
+	| 'kind'
+	| 'name'
+	| 'startType'
+	| 'startName'
+	| 'pid'
+	| 'actions';
 export type ColumnVisibility = Record<ColumnId, boolean>;
 
 /** Columns the user may hide from the view; the rest stay fixed. */
-export const HIDEABLE_COLUMNS: ColumnId[] = ['displayName', 'startType', 'kind', 'pid'];
+export const HIDEABLE_COLUMNS: ColumnId[] = [
+	'displayName',
+	'startType',
+	'kind',
+	'startName',
+	'pid'
+];
 
 export function defaultVisibility(): ColumnVisibility {
 	return {
@@ -139,6 +172,7 @@ export function defaultVisibility(): ColumnVisibility {
 		kind: false,
 		name: true,
 		startType: true,
+		startName: false,
 		pid: false,
 		actions: true
 	};

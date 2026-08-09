@@ -6,6 +6,7 @@
 	import {
 		rowActions,
 		KIND_LABEL,
+		logonLabel,
 		startupOptions,
 		stripeClass,
 		statusClass,
@@ -75,6 +76,9 @@
 		{#if visible.startType}
 			<col class="col-startup" />
 		{/if}
+		{#if visible.startName}
+			<col class="col-logon" />
+		{/if}
 		{#if visible.pid}
 			<col class="col-pid" />
 		{/if}
@@ -93,6 +97,9 @@
 			{@render sortHeader('name', 'Service name')}
 			{#if visible.startType}
 				{@render sortHeader('startType', 'Startup', true)}
+			{/if}
+			{#if visible.startName}
+				<th scope="col">Log on as</th>
 			{/if}
 			{#if visible.pid}
 				<th scope="col" class="th-right">PID</th>
@@ -135,6 +142,9 @@
 						{/if}
 					</td>
 				{/if}
+				{#if visible.startName}
+					<td class="logon" title={service.startName ?? ''}>{logonLabel(service.startName)}</td>
+				{/if}
 				{#if visible.pid}
 					<td class="pid">{service.pid ?? '—'}</td>
 				{/if}
@@ -166,7 +176,7 @@
 <style>
 	.table {
 		width: 100%;
-		min-width: 988px;
+		min-width: 1098px;
 		table-layout: fixed;
 		border-collapse: separate;
 		border-spacing: 0;
@@ -195,6 +205,10 @@
 
 	.col-startup {
 		width: 100px;
+	}
+
+	.col-logon {
+		width: 110px;
 	}
 
 	.col-pid {
@@ -355,6 +369,14 @@
 		text-align: right;
 		font-size: 11px;
 		color: var(--text-dim);
+	}
+
+	.logon {
+		font-size: 11.5px;
+		color: var(--text-dim);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.startup {

@@ -325,6 +325,7 @@ mod tests {
             kind: ServiceKind::Win32OwnProcess,
             pid: None,
             binary_path: String::new(),
+            start_name: None,
         }
     }
 

@@ -8,6 +8,7 @@ import {
 	statusClass,
 	stripeClass,
 	STATE_LABEL,
+	logonLabel,
 	defaultVisibility,
 	HIDEABLE_COLUMNS,
 	sortAfterClick,
@@ -22,7 +23,8 @@ function service(state: ServiceInfo['state'], startType: ServiceInfo['startType'
 		startType,
 		kind: 'win32OwnProcess',
 		pid: null,
-		binaryPath: ''
+		binaryPath: '',
+		startName: null
 	};
 }
 
@@ -35,6 +37,7 @@ function svc(name: string, overrides: Partial<ServiceInfo> = {}): ServiceInfo {
 		kind: 'win32OwnProcess',
 		pid: null,
 		binaryPath: '',
+		startName: null,
 		...overrides
 	};
 }
@@ -132,6 +135,26 @@ describe('presentation classes', () => {
 	});
 });
 
+describe('logonLabel', () => {
+	it('friendly-labels the well-known service accounts', () => {
+		expect(logonLabel('LocalSystem')).toBe('Local System');
+		expect(logonLabel('NT AUTHORITY\\LocalService')).toBe('Local Service');
+		expect(logonLabel('.\\LocalService')).toBe('Local Service');
+		expect(logonLabel('NT AUTHORITY\\NetworkService')).toBe('Network Service');
+		expect(logonLabel('.\\NetworkService')).toBe('Network Service');
+	});
+
+	it('passes unknown accounts through untouched', () => {
+		expect(logonLabel('DOMAIN\\alice')).toBe('DOMAIN\\alice');
+		expect(logonLabel('LocalService')).toBe('Local Service');
+	});
+
+	it('renders missing accounts as a dash', () => {
+		expect(logonLabel(null)).toBe('—');
+		expect(logonLabel('')).toBe('—');
+	});
+});
+
 describe('sortServices', () => {
 	const services = [
 		svc('b', { state: 'running', startType: 'automatic' }),
@@ -223,10 +246,11 @@ describe('column visibility', () => {
 		expect(visible.startType).toBe(true);
 		expect(visible.actions).toBe(true);
 		expect(visible.kind).toBe(false);
+		expect(visible.startName).toBe(false);
 		expect(visible.pid).toBe(false);
 	});
 
 	it('only allows hiding the optional columns', () => {
-		expect(HIDEABLE_COLUMNS).toEqual(['displayName', 'startType', 'kind', 'pid']);
+		expect(HIDEABLE_COLUMNS).toEqual(['displayName', 'startType', 'kind', 'startName', 'pid']);
 	});
 });

@@ -24,6 +24,7 @@ function service(name: string, overrides: Partial<ServiceInfo> = {}): ServiceInf
 		kind: 'win32OwnProcess',
 		pid: null,
 		binaryPath: '',
+		startName: null,
 		...overrides
 	};
 }

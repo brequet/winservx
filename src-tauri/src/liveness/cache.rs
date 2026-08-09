@@ -104,6 +104,7 @@ impl ServiceCache {
                     cached.display_name = info.display_name;
                     cached.kind = info.kind;
                     cached.binary_path = info.binary_path;
+                    cached.start_name = info.start_name;
                 }
                 Entry::Vacant(vacant) => {
                     change_set.added.push(info.clone());
@@ -183,6 +184,7 @@ mod tests {
             kind: ServiceKind::Win32OwnProcess,
             pid,
             binary_path: String::new(),
+            start_name: None,
         }
     }
 
