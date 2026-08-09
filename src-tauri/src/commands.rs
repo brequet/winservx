@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use tauri::State;
 use tracing::{debug, warn};
 
@@ -32,27 +30,26 @@ pub async fn relaunch_as_elevated(app: tauri::AppHandle) -> Result<(), ServiceEr
 #[specta::specta]
 pub async fn get_services(state: State<'_, AppState>) -> Result<Vec<ServiceInfo>, ServiceError> {
     debug!(command = "get_services", "command started");
-    {
-        let cache = state.cache.read().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !cache.is_empty() {
-            return Ok(cache.snapshot());
+    // Wait for the liveness pipeline's first refresh; the cache is fully
+    // written before the signal flips. Later calls take the current outcome.
+    let outcome = {
+        let mut first_refresh = state.first_refresh.lock().await;
+        if first_refresh.has_changed().unwrap_or(false) {
+            first_refresh.borrow().clone()
+        } else {
+            first_refresh
+                .changed()
+                .await
+                .map_err(|_| ServiceError::Internal { message: "liveness pipeline stopped".into() })?;
+            first_refresh.borrow().clone()
         }
+    };
+    if let Err(error) = outcome {
+        warn!(command = "get_services", error = %error, "initial refresh failed");
+        return Err(error);
     }
-
-    // The liveness pipeline has not produced its first snapshot yet; query the
-    // SCM directly and seed the cache so the frontend gets an immediate result.
-    let result = state.repository.list_services().await;
-    let cache = Arc::clone(&state.cache);
-    if let Ok(ref services) = result {
-        let mut cache = cache.write().unwrap_or_else(|poisoned| poisoned.into_inner());
-        if cache.is_empty() {
-            cache.apply_full_snapshot(services.clone());
-        }
-    }
-    if let Err(e) = &result {
-        warn!(command = "get_services", error = %e, "command failed");
-    }
-    result
+    let cache = state.cache.read().unwrap_or_else(|poisoned| poisoned.into_inner());
+    Ok(cache.snapshot())
 }
 
 #[tauri::command]

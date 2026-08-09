@@ -17,6 +17,7 @@ use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
+use domain::error::ServiceError;
 use domain::watcher::{NoopServiceWatcher, ServiceWatcher};
 use liveness::cache::ServiceCache;
 use liveness::events::{ServiceConfigChanged, ServiceStatusChanged, ServicesChanged};
@@ -104,6 +105,9 @@ pub fn run() {
             let repository: Arc<AsyncServiceRepository> = Arc::new(AsyncServiceRepository::new(
                 Arc::new(WindowsServiceRepository),
             ));
+            let (first_refresh_tx, first_refresh_rx) = tokio::sync::watch::channel(
+                Err(ServiceError::Internal { message: "initial refresh pending".into() }),
+            );
             let actions = Arc::new(ActionService::new(Arc::clone(&repository)));
             let sink = Arc::new(TauriEventSink::new(app.handle().clone()));
             let liveness = LivenessService::new(
@@ -111,12 +115,13 @@ pub fn run() {
                 watcher,
                 Arc::clone(&cache),
                 sink,
+                first_refresh_tx,
             );
             let liveness_handle = liveness.start(signal_rx);
             app.manage(AppState {
-                repository,
                 cache,
                 actions,
+                first_refresh: tokio::sync::Mutex::new(first_refresh_rx),
                 _liveness: liveness_handle,
             });
             Ok(())

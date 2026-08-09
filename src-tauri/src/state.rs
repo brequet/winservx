@@ -1,18 +1,22 @@
 use std::sync::{Arc, RwLock};
 
+use tokio::sync::{watch, Mutex};
 use tracing::error;
 
+use crate::domain::error::ServiceError;
 use crate::liveness::cache::ServiceCache;
 use crate::liveness::events::LivenessEvent;
 use crate::liveness::service::{EventSink, LivenessHandle};
 use crate::queue::actions::ActionService;
-use crate::queue::bridge::AsyncServiceRepository;
 
 /// Managed Tauri state shared across commands.
 pub struct AppState {
-    pub repository: Arc<AsyncServiceRepository>,
     pub cache: Arc<RwLock<ServiceCache>>,
     pub actions: Arc<ActionService>,
+    /// Carries the outcome of the latest full refresh; `get_services` awaits
+    /// the first flip and then reads the cache. Mutex-wrapped because awaiting
+    /// a `watch` flip needs `&mut` on the receiver.
+    pub first_refresh: Mutex<watch::Receiver<Result<(), ServiceError>>>,
     pub _liveness: LivenessHandle,
 }
 

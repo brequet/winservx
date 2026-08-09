@@ -1,9 +1,10 @@
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
+use crate::domain::error::ServiceError;
 use crate::domain::watcher::{ServiceWatcher, WatcherSignal};
 use crate::queue::bridge::AsyncServiceRepository;
 
@@ -27,6 +28,10 @@ pub struct LivenessService {
     watcher: Box<dyn ServiceWatcher>,
     cache: Arc<RwLock<ServiceCache>>,
     sink: Arc<dyn EventSink>,
+    /// Readiness signal for `get_services`: carries the outcome of every full
+    /// refresh attempt. The cache is written before the signal flips, so the
+    /// snapshot is visible as soon as the receiver wakes.
+    first_refresh: watch::Sender<Result<(), ServiceError>>,
 }
 
 /// Keeps the liveness background tasks alive for the app lifetime.
@@ -40,12 +45,14 @@ impl LivenessService {
         watcher: Box<dyn ServiceWatcher>,
         cache: Arc<RwLock<ServiceCache>>,
         sink: Arc<dyn EventSink>,
+        first_refresh: watch::Sender<Result<(), ServiceError>>,
     ) -> Self {
         Self {
             repository,
             watcher,
             cache,
             sink,
+            first_refresh,
         }
     }
 
@@ -102,6 +109,7 @@ impl LivenessService {
             Ok(fresh) => fresh,
             Err(error) => {
                 warn!(error = %error, "full refresh failed");
+                let _ = self.first_refresh.send(Err(error));
                 return;
             }
         };
@@ -112,6 +120,11 @@ impl LivenessService {
             let change_set = cache.apply_full_snapshot(fresh.clone());
             (change_set, initial)
         };
+
+        // The cache is fully written above; the signal now tells `get_services`
+        // the snapshot is ready. It flips on every attempt, so a retry after a
+        // failure converges with the next successful poll.
+        let _ = self.first_refresh.send(Ok(()));
 
         for service in &fresh {
             if let Err(error) = self.watcher.watch_service(&service.name) {
@@ -188,5 +201,153 @@ impl LivenessService {
         if let Some(event) = event {
             self.sink.emit(LivenessEvent::Config(event));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex as StdMutex;
+
+    use super::*;
+    use crate::domain::repository::ServiceRepository;
+    use crate::domain::service::{
+        ServiceConfig, ServiceInfo, ServiceKind, ServiceRuntimeStatus, ServiceStartType,
+        ServiceState,
+    };
+    use crate::domain::watcher::NoopServiceWatcher;
+    use crate::queue::bridge::AsyncServiceRepository;
+
+    struct TestSink;
+
+    impl EventSink for TestSink {
+        fn emit(&self, _event: LivenessEvent) {}
+    }
+
+    /// Repository whose `list_services` fails until it has been called a given number of times.
+    struct FlakyRepository {
+        failures: StdMutex<u32>,
+    }
+
+    impl FlakyRepository {
+        fn new(failures: u32) -> Self {
+            Self {
+                failures: StdMutex::new(failures),
+            }
+        }
+    }
+
+    fn service(name: &str, state: ServiceState) -> ServiceInfo {
+        ServiceInfo {
+            name: name.to_owned(),
+            display_name: name.to_uppercase(),
+            state,
+            start_type: Some(ServiceStartType::Automatic),
+            kind: ServiceKind::Win32OwnProcess,
+            pid: None,
+        }
+    }
+
+    impl ServiceRepository for FlakyRepository {
+        fn list_services(&self) -> Result<Vec<ServiceInfo>, ServiceError> {
+            let mut failures = self.failures.lock().unwrap();
+            if *failures > 0 {
+                *failures -= 1;
+                return Err(ServiceError::Windows { code: 5, message: "Access is denied".into() });
+            }
+            Ok(vec![service("svc", ServiceState::Running)])
+        }
+
+        fn list_states(&self) -> Result<Vec<ServiceRuntimeStatus>, ServiceError> {
+            Ok(Vec::new())
+        }
+
+        fn query_service_status(
+            &self,
+            _name: &str,
+        ) -> Result<Option<ServiceRuntimeStatus>, ServiceError> {
+            Ok(None)
+        }
+
+        fn query_config(&self, _name: &str) -> Result<Option<ServiceConfig>, ServiceError> {
+            Ok(None)
+        }
+
+        fn start_service(&self, _name: &str) -> Result<(), ServiceError> {
+            Ok(())
+        }
+
+        fn stop_service(&self, _name: &str) -> Result<(), ServiceError> {
+            Ok(())
+        }
+
+        fn set_start_type(
+            &self,
+            _name: &str,
+            _start_type: ServiceStartType,
+        ) -> Result<(), ServiceError> {
+            Ok(())
+        }
+    }
+
+    fn test_liveness(
+        repository: Arc<AsyncServiceRepository>,
+    ) -> (Arc<LivenessService>, watch::Receiver<Result<(), ServiceError>>) {
+        let cache = Arc::new(RwLock::new(ServiceCache::default()));
+        let (first_refresh_tx, first_refresh_rx) = watch::channel(Err(ServiceError::Internal {
+            message: "initial refresh pending".into(),
+        }));
+        let liveness = Arc::new(LivenessService::new(
+            repository,
+            Box::new(NoopServiceWatcher),
+            cache,
+            Arc::new(TestSink),
+            first_refresh_tx,
+        ));
+        (liveness, first_refresh_rx)
+    }
+
+    #[tokio::test]
+    async fn first_refresh_flips_ready_after_success() {
+        let repository =
+            Arc::new(AsyncServiceRepository::new(Arc::new(FlakyRepository::new(0))));
+        let (liveness, rx) = test_liveness(repository);
+
+        liveness.refresh_all().await;
+
+        assert!(rx.has_changed().unwrap_or(false));
+        assert!(rx.borrow().is_ok());
+        let cache = liveness.cache.read().unwrap();
+        let snapshot = cache.snapshot();
+        assert_eq!(snapshot.len(), 1);
+        assert_eq!(snapshot[0].name, "svc");
+    }
+
+    #[tokio::test]
+    async fn first_refresh_carries_error_when_refresh_fails() {
+        let repository =
+            Arc::new(AsyncServiceRepository::new(Arc::new(FlakyRepository::new(1))));
+        let (liveness, rx) = test_liveness(repository);
+
+        liveness.refresh_all().await;
+
+        assert!(rx.has_changed().unwrap_or(false));
+        assert!(
+            matches!(&*rx.borrow(), Err(ServiceError::Windows { code: 5, .. })),
+            "expected access denied, got {:?}",
+            rx.borrow()
+        );
+    }
+
+    #[tokio::test]
+    async fn later_refresh_flips_ready_after_failure() {
+        let repository =
+            Arc::new(AsyncServiceRepository::new(Arc::new(FlakyRepository::new(1))));
+        let (liveness, rx) = test_liveness(repository);
+
+        liveness.refresh_all().await;
+        assert!(rx.borrow().is_err());
+
+        liveness.refresh_all().await;
+        assert!(rx.borrow().is_ok());
     }
 }
