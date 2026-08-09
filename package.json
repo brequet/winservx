@@ -18,8 +18,9 @@
 		"lint:eslint": "eslint .",
 		"lint:clippy": "cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings",
 		"lint": "run-p lint:*",
+		"test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
 		"format": "prettier --write .",
-		"validate": "run-p check lint:*",
+		"validate": "run-p check lint:* test:rust",
 		"prepare": "husky install"
 	},
 	"dependencies": {
