@@ -13,6 +13,16 @@ default-run = "winservx"
 name = "winservx_lib"
 crate-type = ["rlib"]
 
+[features]
+# The specta bindings generator is a dev-only binary.
+# Gating it keeps it out of release builds and installers.
+specta-gen = []
+
+[[bin]]
+name = "specta"
+path = "src/bin/specta.rs"
+required-features = ["specta-gen"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
