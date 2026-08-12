@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
+use crate::contract::events::QueueTaskUpdated;
 use crate::domain::error::ServiceError;
 use crate::domain::queue::{QueueAction, QueueTask, QueueTaskStatus};
-
-use super::events::QueueTaskUpdated;
 
 /// Port for delivering task state changes to the frontend.
 /// Implemented by a Tauri adapter; the queue layer never touches Tauri itself.

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::domain::service::{ServiceConfig, ServiceInfo, ServiceRuntimeStatus};
 
-use super::events::{ServiceConfigChanged, ServiceStatusChanged};
+use crate::contract::events::{ServiceConfigChanged, ServiceStatusChanged};
 
 /// In-memory read model of the services shown in the UI, kept fresh by the
 /// liveness pipeline. The frontend receives the full snapshot through

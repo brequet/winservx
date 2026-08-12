@@ -1,4 +1,5 @@
 mod commands;
+mod contract;
 mod domain;
 mod liveness;
 mod queue;
@@ -17,13 +18,12 @@ use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::writer::MakeWriterExt;
 
+use contract::events::{ServiceConfigChanged, QueueTaskUpdated, ServiceStatusChanged, ServicesChanged};
 use domain::error::ServiceError;
 use domain::watcher::{NoopServiceWatcher, ServiceWatcher};
 use liveness::cache::ServiceCache;
-use liveness::events::{ServiceConfigChanged, ServiceStatusChanged, ServicesChanged};
 use liveness::service::LivenessService;
 use queue::actions::ActionService;
-use queue::events::QueueTaskUpdated;
 use queue::registry::{TaskEventSink, TaskRegistry};
 use runtime::bridge::AsyncServiceRepository;
 use scm::windows::{WindowsServiceRepository, WindowsServiceWatcher};

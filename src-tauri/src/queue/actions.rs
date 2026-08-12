@@ -196,10 +196,10 @@ mod tests {
     use std::sync::Mutex as StdMutex;
 
     use super::*;
+    use crate::contract::events::QueueTaskUpdated;
     use crate::domain::queue::QueueTaskStatus;
     use crate::domain::repository::{DynServiceRepository, ServiceRepository};
     use crate::domain::service::{ServiceInfo, ServiceRuntimeStatus};
-    use crate::queue::events::QueueTaskUpdated;
     use crate::queue::registry::TaskEventSink;
 
     /// Test double recording every repository call it receives.

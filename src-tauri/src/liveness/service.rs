@@ -4,12 +4,13 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tracing::{debug, warn};
 
+use crate::contract::events::ServicesChanged;
 use crate::domain::error::ServiceError;
 use crate::domain::watcher::{ServiceWatcher, WatcherSignal};
 use crate::runtime::bridge::AsyncServiceRepository;
 
 use super::cache::ServiceCache;
-use super::events::{LivenessEvent, ServicesChanged};
+use super::events::LivenessEvent;
 
 /// Cadence of the reconciliation poll. Notifications make changes visible
 /// immediately; the poll is the safety net for missed notifications and for

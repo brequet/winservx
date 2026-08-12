@@ -3,12 +3,12 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Mutex};
 use tracing::error;
 
+use crate::contract::events::QueueTaskUpdated;
 use crate::domain::error::ServiceError;
 use crate::liveness::cache::ServiceCache;
 use crate::liveness::events::LivenessEvent;
 use crate::liveness::service::{EventSink, LivenessHandle};
 use crate::queue::actions::ActionService;
-use crate::queue::events::QueueTaskUpdated;
 use crate::queue::registry::TaskEventSink;
 
 /// Managed Tauri state shared across commands.
