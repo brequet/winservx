@@ -11,14 +11,14 @@ Technical decisions: `...\WinServX Technical brainstorming.md` — design inspir
 
 - **Frontend**: Svelte 5, TypeScript, Vite, pnpm. Native CSS.
 - **UI building blocks**: `bits-ui` + native CSS for every common component.
-- **Backend**: Rust, single crate with layered modules (`src-tauri/src/domain`, `scm`, `queue`, `commands`, `state`). One crate, not a workspace.
+- **Backend**: Rust, single crate with layered modules (`src-tauri/src/domain`, `scm`, `queue`, `runtime`, `commands`, `state`). One crate, not a workspace.
 - **Types**: Rust types + commands/events shared to TS via `tauri-specta` (`pnpm gen:bindings` → `src-tauri/gen`). Never hand-edit generated bindings; Rust is the single source of truth.
 
 ## Architecture rules
 
 - **Fat backend, thin frontend**: Rust owns all business logic, service state, queue, SCM truth, persistence. Svelte owns only UI state (search text, row expansion, scroll, drawer open). Never put "is this service running" logic in `.svelte`.
 - **State sync**: full snapshot via `get_services` on launch (awaits the liveness pipeline's first-refresh signal); granular events (`service-status-changed`, `queue-task-updated`) patch individual rows. No diffing/reconciliation layer.
-- **Layering**: `domain` = pure types (no I/O/Tauri/Win32); `scm` = only layer touching `windows` (Win32 APIs), wraps errors in own `ScmError`; `queue` = Tokio scheduler (`ActionService` with per-service sequential lanes, cross-service parallel) plus the `AsyncServiceRepository` bridge — the only place that calls `spawn_blocking`; `commands` = thin `#[tauri::command]` layer, only layer aware of `AppHandle`; `state` = `tauri::State` wiring. Idiomatic Rust DI = traits + constructor injection (`Arc<dyn Trait + Send + Sync>`), no DI framework.
+- **Layering**: `domain` = pure types (no I/O/Tauri/Win32); `scm` = only layer touching `windows` (Win32 APIs), wraps errors in own `ScmError`; `queue` = Tokio scheduler (`ActionService` with per-service sequential lanes, cross-service parallel); `runtime` = the async-over-sync seam (`run_blocking` — the only place that calls `spawn_blocking` — plus the `AsyncServiceRepository` adapter over the `ServiceRepository` port), importable by any layer; `commands` = thin `#[tauri::command]` layer, only layer aware of `AppHandle`; `state` = `tauri::State` wiring. Idiomatic Rust DI = traits + constructor injection (`Arc<dyn Trait + Send + Sync>`), no DI framework.
 
 ## Key product behaviors (non-negotiable)
 

@@ -5,7 +5,7 @@ use crate::{
     domain::error::ServiceError,
     domain::queue::{QueueAction, QueueTask},
     domain::service::ServiceInfo,
-    queue::bridge::run_blocking,
+    runtime::bridge::run_blocking,
     scm::privilege,
     state::AppState,
 };

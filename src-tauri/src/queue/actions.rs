@@ -8,8 +8,8 @@ use tracing::debug;
 use crate::domain::error::ServiceError;
 use crate::domain::queue::{QueueAction, QueueTask};
 use crate::domain::service::{ServiceStartType, ServiceState};
-use crate::queue::bridge::AsyncServiceRepository;
 use crate::queue::registry::TaskRegistry;
+use crate::runtime::bridge::AsyncServiceRepository;
 
 /// Maximum time an action waits for a service to reach its target state.
 const CONVERGE_TIMEOUT: Duration = Duration::from_secs(30);

@@ -2,6 +2,7 @@ mod commands;
 mod domain;
 mod liveness;
 mod queue;
+mod runtime;
 mod scm;
 mod state;
 
@@ -22,9 +23,9 @@ use liveness::cache::ServiceCache;
 use liveness::events::{ServiceConfigChanged, ServiceStatusChanged, ServicesChanged};
 use liveness::service::LivenessService;
 use queue::actions::ActionService;
-use queue::bridge::AsyncServiceRepository;
 use queue::events::QueueTaskUpdated;
 use queue::registry::{TaskEventSink, TaskRegistry};
+use runtime::bridge::AsyncServiceRepository;
 use scm::windows::{WindowsServiceRepository, WindowsServiceWatcher};
 use state::{AppState, TauriEventSink};
 

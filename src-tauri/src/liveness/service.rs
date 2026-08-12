@@ -6,7 +6,7 @@ use tracing::{debug, warn};
 
 use crate::domain::error::ServiceError;
 use crate::domain::watcher::{ServiceWatcher, WatcherSignal};
-use crate::queue::bridge::AsyncServiceRepository;
+use crate::runtime::bridge::AsyncServiceRepository;
 
 use super::cache::ServiceCache;
 use super::events::{LivenessEvent, ServicesChanged};
@@ -241,7 +241,7 @@ mod tests {
         ServiceState,
     };
     use crate::domain::watcher::NoopServiceWatcher;
-    use crate::queue::bridge::AsyncServiceRepository;
+    use crate::runtime::bridge::AsyncServiceRepository;
 
     /// Records every event it receives.
     struct RecordingSink {
