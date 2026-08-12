@@ -7,7 +7,7 @@ use windows::Win32::System::Services::{CloseServiceHandle, OpenSCManagerW, SC_MA
 use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW};
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
-use crate::domain::error::ServiceError;
+use crate::scm::error::ScmError;
 
 /// True when the current process can administer the SCM, i.e. runs elevated.
 ///
@@ -46,8 +46,8 @@ pub enum RelaunchOutcome {
 /// Returns [`RelaunchOutcome::Launched`] when a new elevated process was
 /// launched, or [`RelaunchOutcome::Cancelled`] when the user dismissed the
 /// prompt.
-pub fn relaunch_elevated() -> Result<RelaunchOutcome, ServiceError> {
-    let exe = std::env::current_exe().map_err(|error| ServiceError::Internal {
+pub fn relaunch_elevated() -> Result<RelaunchOutcome, ScmError> {
+    let exe = std::env::current_exe().map_err(|error| ScmError::Internal {
         message: format!("cannot resolve current executable: {error}"),
     })?;
     let file: Vec<u16> = exe
@@ -75,7 +75,7 @@ pub fn relaunch_elevated() -> Result<RelaunchOutcome, ServiceError> {
             debug!("user cancelled the elevation prompt");
             return Ok(RelaunchOutcome::Cancelled);
         }
-        return Err(ServiceError::Internal {
+        return Err(ScmError::Internal {
             message: format!("failed to relaunch elevated: {error}"),
         });
     }

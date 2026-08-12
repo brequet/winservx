@@ -33,6 +33,7 @@ use crate::domain::service::{
     ServiceConfig, ServiceInfo, ServiceKind, ServiceRuntimeStatus, ServiceStartType, ServiceState,
 };
 use crate::domain::watcher::{ServiceWatcher, WatcherSignal};
+use crate::scm::error::ScmError;
 
 /// Lists services via the Windows Service Control Manager (advapi32).
 pub struct WindowsServiceRepository;
@@ -90,7 +91,8 @@ impl ServiceRepository for WindowsServiceRepository {
                 size_of::<SERVICE_STATUS_PROCESS>(),
             )
         };
-        unsafe { QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, Some(buffer), &mut needed) }?;
+        unsafe { QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, Some(buffer), &mut needed) }
+            .map_err(ScmError::from)?;
         Ok(Some(ServiceRuntimeStatus {
             name: name.to_owned(),
             state: map_state(status.dwCurrentState),
@@ -122,7 +124,7 @@ impl ServiceRepository for WindowsServiceRepository {
         let _guard = ScHandle(manager);
         let service = open_service(manager, name, SERVICE_START)?;
         let _service_guard = ScHandle(service);
-        unsafe { StartServiceW(service, None) }?;
+        unsafe { StartServiceW(service, None) }.map_err(ScmError::from)?;
         Ok(())
     }
 
@@ -132,7 +134,8 @@ impl ServiceRepository for WindowsServiceRepository {
         let service = open_service(manager, name, SERVICE_STOP)?;
         let _service_guard = ScHandle(service);
         let mut status = SERVICE_STATUS::default();
-        unsafe { ControlService(service, SERVICE_CONTROL_STOP, &mut status) }?;
+        unsafe { ControlService(service, SERVICE_CONTROL_STOP, &mut status) }
+            .map_err(ScmError::from)?;
         Ok(())
     }
 
@@ -155,12 +158,13 @@ impl ServiceRepository for WindowsServiceRepository {
                 PCWSTR::null(),
                 PCWSTR::null(),
             )
-        }?;
+        }
+        .map_err(ScmError::from)?;
         Ok(())
     }
 }
 
-fn open_manager() -> Result<SC_HANDLE, ServiceError> {
+fn open_manager() -> Result<SC_HANDLE, ScmError> {
     // CONNECT is required to open individual service handles through the manager.
     unsafe {
         OpenSCManagerW(
@@ -173,10 +177,10 @@ fn open_manager() -> Result<SC_HANDLE, ServiceError> {
 }
 
 /// Opens a service handle, requiring it to exist; maps "does not exist" to an error.
-fn open_service(manager: SC_HANDLE, name: &str, access: u32) -> Result<SC_HANDLE, ServiceError> {
+fn open_service(manager: SC_HANDLE, name: &str, access: u32) -> Result<SC_HANDLE, ScmError> {
     match open_service_opt(manager, name, access)? {
         Some(service) => Ok(service),
-        None => Err(ServiceError::service_not_found(name)),
+        None => Err(ScmError::service_not_found(name)),
     }
 }
 
@@ -185,7 +189,7 @@ fn open_service_opt(
     manager: SC_HANDLE,
     name: &str,
     access: u32,
-) -> Result<Option<SC_HANDLE>, ServiceError> {
+) -> Result<Option<SC_HANDLE>, ScmError> {
     let name_wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
     match unsafe { OpenServiceW(manager, PCWSTR(name_wide.as_ptr()), access) } {
         Ok(service) => Ok(Some(service)),
@@ -216,7 +220,7 @@ struct RawServiceEntry {
     pid: Option<u32>,
 }
 
-fn enumerate_entries(manager: SC_HANDLE) -> Result<Vec<RawServiceEntry>, ServiceError> {
+fn enumerate_entries(manager: SC_HANDLE) -> Result<Vec<RawServiceEntry>, ScmError> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut needed = 0u32;
     let mut returned = 0u32;
@@ -314,7 +318,7 @@ fn start_name_of(config: &QUERY_SERVICE_CONFIGW) -> Option<String> {
     (!raw.is_empty()).then_some(raw)
 }
 
-fn query_config_w(service: SC_HANDLE) -> Result<QUERY_SERVICE_CONFIGW, ServiceError> {
+fn query_config_w(service: SC_HANDLE) -> Result<QUERY_SERVICE_CONFIGW, ScmError> {
     let mut buffer: Vec<u8> = Vec::new();
     let mut needed = 0u32;
     loop {
@@ -378,7 +382,7 @@ fn map_start_type(raw: SERVICE_START_TYPE) -> ServiceStartType {
 }
 
 /// Inverse of [`map_start_type`], for writing a start type back to SCM.
-fn raw_start_type(start_type: ServiceStartType) -> Result<u32, ServiceError> {
+fn raw_start_type(start_type: ServiceStartType) -> Result<u32, ScmError> {
     let raw = match start_type {
         ServiceStartType::Boot => SERVICE_BOOT_START,
         ServiceStartType::System => SERVICE_SYSTEM_START,
@@ -386,7 +390,7 @@ fn raw_start_type(start_type: ServiceStartType) -> Result<u32, ServiceError> {
         ServiceStartType::Manual => SERVICE_DEMAND_START,
         ServiceStartType::Disabled => SERVICE_DISABLED,
         ServiceStartType::Unknown => {
-            return Err(ServiceError::Internal {
+            return Err(ScmError::Internal {
                 message: "cannot write an unknown startup type".into(),
             })
         }
@@ -420,7 +424,7 @@ fn subscribe_service(
     event_type: SC_EVENT_TYPE,
     signal: WatcherSignal,
     tx: &mpsc::Sender<WatcherSignal>,
-) -> Result<PSC_NOTIFICATION_REGISTRATION, ServiceError> {
+) -> Result<PSC_NOTIFICATION_REGISTRATION, ScmError> {
     let ctx = Box::leak(Box::new(SubscriptionCtx {
         tx: tx.clone(),
         signal,
@@ -436,7 +440,7 @@ fn subscribe_service(
         )
     };
     if code != 0 {
-        Err(ServiceError::from(windows::core::Error::from_hresult(
+        Err(ScmError::from(windows::core::Error::from_hresult(
             HRESULT::from_win32(code),
         )))
     } else {
@@ -476,7 +480,7 @@ unsafe impl Send for WindowsServiceWatcher {}
 unsafe impl Sync for WindowsServiceWatcher {}
 
 impl WindowsServiceWatcher {
-    pub fn new(tx: mpsc::Sender<WatcherSignal>) -> Result<Self, ServiceError> {
+    pub fn new(tx: mpsc::Sender<WatcherSignal>) -> Result<Self, ScmError> {
         let manager = open_manager()?;
         let database = subscribe_service(
             manager,
