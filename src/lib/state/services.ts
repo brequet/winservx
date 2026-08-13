@@ -1,5 +1,7 @@
 import { fuzzyScore } from '$lib/search/fuzzy';
 import type {
+	QueueAction,
+	QueueTaskStatus,
 	ServiceConfigChanged,
 	ServiceInfo,
 	ServiceStartType,
@@ -77,6 +79,68 @@ export function revertStartType(
 			? { ...service, startType: previous }
 			: service
 	);
+}
+
+/** An optimistic startup-type change awaiting its queue task to settle. */
+export interface OptimisticStartType {
+	set: ServiceStartType;
+	previous: ServiceStartType | null;
+}
+
+/** Optimistic startup-type changes, keyed by service name. */
+export type OptimisticStartTypes = Map<string, OptimisticStartType>;
+
+/** Records an optimistic startup-type change; overwrites any previous entry. */
+export function recordOptimisticStartType(
+	entries: OptimisticStartTypes,
+	name: string,
+	set: ServiceStartType,
+	previous: ServiceStartType | null
+): OptimisticStartTypes {
+	const next = new Map(entries);
+	next.set(name, { set, previous });
+	return next;
+}
+
+/** Removes a service's optimistic startup-type entry, if present. */
+export function discardOptimisticStartType(
+	entries: OptimisticStartTypes,
+	name: string
+): OptimisticStartTypes {
+	if (!entries.has(name)) return entries;
+	const next = new Map(entries);
+	next.delete(name);
+	return next;
+}
+
+/**
+ * Settles a service's optimistic entry when its queue task reaches a terminal
+ * state. Successes clear the entry (the value is now real); failures revert to
+ * the previous value unless a fresh event already moved the service on.
+ *
+ * The entry is keyed by service name and recorded synchronously on the
+ * optimistic change, so a task that settles before the enqueue invoke resolves
+ * still reverts correctly.
+ */
+export function settleOptimisticStartType(
+	services: ServiceInfo[],
+	entries: OptimisticStartTypes,
+	task: { serviceName: string; action: QueueAction; status: QueueTaskStatus }
+): { next: ServiceInfo[]; entries: OptimisticStartTypes } {
+	if (typeof task.action === 'string') return { next: services, entries };
+	const entry = entries.get(task.serviceName);
+	if (!entry) return { next: services, entries };
+	if (task.status === 'queued' || task.status === 'running') {
+		return { next: services, entries };
+	}
+	const nextEntries = discardOptimisticStartType(entries, task.serviceName);
+	if (task.status !== 'failed' || entry.set !== task.action.setStartType) {
+		return { next: services, entries: nextEntries };
+	}
+	return {
+		next: revertStartType(services, task.serviceName, entry.set, entry.previous),
+		entries: nextEntries
+	};
 }
 
 const NAME_BONUS = 1000;

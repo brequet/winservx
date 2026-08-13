@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type {
 	ServiceConfigChanged,
 	ServiceInfo,
+	ServiceStartType,
 	ServiceStatusChanged,
 	ServicesChanged
 } from '$lib/tauri/bindings';
@@ -11,8 +12,12 @@ import {
 	applyServicesChanged,
 	applySnapshot,
 	applyStatusChanged,
+	discardOptimisticStartType,
 	filterServices,
-	revertStartType
+	recordOptimisticStartType,
+	revertStartType,
+	settleOptimisticStartType,
+	type OptimisticStartType
 } from './services';
 
 function service(name: string, overrides: Partial<ServiceInfo> = {}): ServiceInfo {
@@ -120,6 +125,90 @@ describe('optimistic start type', () => {
 		expect(
 			revertStartType(updated, 'b', 'disabled', 'automatic').find((s) => s.name === 'b')?.startType
 		).toBe('manual');
+	});
+});
+
+describe('optimistic start type settle', () => {
+	const entry = (
+		set: ServiceStartType,
+		previous: ServiceStartType | null
+	): OptimisticStartType => ({
+		set,
+		previous
+	});
+
+	const recorded = () => recordOptimisticStartType(new Map(), 'b', 'disabled', 'automatic');
+
+	it('records and discards entries by service name', () => {
+		const entries = recorded();
+		expect(entries.get('b')).toEqual(entry('disabled', 'automatic'));
+		const discarded = discardOptimisticStartType(entries, 'b');
+		expect(discarded.has('b')).toBe(false);
+		expect(entries.has('b')).toBe(true);
+	});
+
+	it('reverts a failed change even when the enqueue invoke has not resolved yet', () => {
+		// The entry is recorded synchronously on the optimistic change, so a
+		// failure that settles before the invoke resolves still reverts.
+		const optimistic = applyOptimisticStartType(services(), 'b', 'disabled');
+		const settled = settleOptimisticStartType(optimistic.next, recorded(), {
+			serviceName: 'b',
+			action: { setStartType: 'disabled' },
+			status: 'failed'
+		});
+		expect(settled.next).toEqual(services());
+		expect(settled.entries.has('b')).toBe(false);
+	});
+
+	it('keeps the entry while the task is still in flight', () => {
+		const optimistic = applyOptimisticStartType(services(), 'b', 'disabled');
+		for (const status of ['queued', 'running'] as const) {
+			const settled = settleOptimisticStartType(optimistic.next, recorded(), {
+				serviceName: 'b',
+				action: { setStartType: 'disabled' },
+				status
+			});
+			expect(settled.next).toEqual(optimistic.next);
+			expect(settled.entries.get('b')).toEqual(entry('disabled', 'automatic'));
+		}
+	});
+
+	it('clears the entry on success without reverting', () => {
+		const optimistic = applyOptimisticStartType(services(), 'b', 'disabled');
+		const settled = settleOptimisticStartType(optimistic.next, recorded(), {
+			serviceName: 'b',
+			action: { setStartType: 'disabled' },
+			status: 'success'
+		});
+		expect(settled.next).toEqual(optimistic.next);
+		expect(settled.entries.has('b')).toBe(false);
+	});
+
+	it('leaves the entry untouched for runtime actions', () => {
+		const entries = recorded();
+		const settled = settleOptimisticStartType(services(), entries, {
+			serviceName: 'b',
+			action: 'start',
+			status: 'failed'
+		});
+		expect(settled.next).toEqual(services());
+		expect(settled.entries.get('b')).toEqual(entry('disabled', 'automatic'));
+	});
+
+	it('does not revert when a fresh event moved the value meanwhile', () => {
+		const optimistic = applyOptimisticStartType(services(), 'b', 'disabled');
+		const updated = applyConfigChanged(optimistic.next, {
+			name: 'b',
+			displayName: 'B',
+			startType: 'manual'
+		});
+		const settled = settleOptimisticStartType(updated, recorded(), {
+			serviceName: 'b',
+			action: { setStartType: 'disabled' },
+			status: 'failed'
+		});
+		expect(settled.next.find((s) => s.name === 'b')?.startType).toBe('manual');
+		expect(settled.entries.has('b')).toBe(false);
 	});
 });
 

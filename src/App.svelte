@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { SvelteMap } from 'svelte/reactivity';
 	import type { ServiceAction } from '$lib/queue';
 	import type {
 		QueueTask,
@@ -22,8 +21,12 @@
 		applyServicesChanged,
 		applySnapshot,
 		applyStatusChanged,
+		discardOptimisticStartType,
 		filterServices,
-		revertStartType
+		recordOptimisticStartType,
+		revertStartType,
+		settleOptimisticStartType,
+		type OptimisticStartTypes
 	} from '$lib/state/services';
 	import {
 		applyQueueSnapshot,
@@ -54,11 +57,11 @@
 	let contentEl: HTMLElement | undefined = $state();
 	let previousQuery = '';
 
-	/** Optimistic startup-type changes, keyed by task id, reverted on task failure. */
-	const optimisticStartTypes = new SvelteMap<
-		number,
-		{ name: string; set: ServiceStartType; previous: ServiceStartType | null }
-	>();
+	/**
+	 * Optimistic startup-type changes, keyed by service name and recorded
+	 * synchronously. Settled by `settleOptimisticStartType` on task events.
+	 */
+	let optimisticStartTypes: OptimisticStartTypes = new Map();
 
 	$effect(() => {
 		saveTablePrefs(sort, visible);
@@ -101,17 +104,21 @@
 	function runStartupChange(name: string, startType: ServiceStartType) {
 		const optimistic = applyOptimisticStartType(services, name, startType);
 		services = optimistic.next;
+		// Record synchronously: a task can settle (and fail) before the enqueue
+		// invoke resolves, so the entry must exist before its events arrive.
+		optimisticStartTypes = recordOptimisticStartType(
+			optimisticStartTypes,
+			name,
+			startType,
+			optimistic.previous
+		);
 		enqueueAction(name, { setStartType: startType }).then((result) => {
 			if (isErr(result)) {
 				services = revertStartType(services, name, startType, optimistic.previous);
+				optimisticStartTypes = discardOptimisticStartType(optimisticStartTypes, name);
 				console.error('failed to enqueue startup change', result.error);
 				return;
 			}
-			optimisticStartTypes.set(result.value, {
-				name,
-				set: startType,
-				previous: optimistic.previous
-			});
 			queue = insertPendingTask(queue, {
 				id: result.value,
 				serviceName: name,
@@ -144,23 +151,16 @@
 		}
 	}
 
-	/** Patches the queue from backend task events; reverts failed startup changes. */
+	/** Patches the queue from backend task events; settles optimistic startup changes. */
 	function onTaskUpdated(event: QueueTaskUpdated) {
 		const { task } = event;
 		queue = applyTaskChanged(queue, task);
+		const settled = settleOptimisticStartType(services, optimisticStartTypes, task);
+		services = settled.next;
+		optimisticStartTypes = settled.entries;
 		if (task.status === 'success') {
 			scheduleDismiss(task.id);
-		} else if (task.status === 'failed' && typeof task.action !== 'string') {
-			revertOptimisticStartType(task.id);
 		}
-	}
-
-	/** Reverts the optimistic startup type of a failed task, if it still holds. */
-	function revertOptimisticStartType(id: number) {
-		const entry = optimisticStartTypes.get(id);
-		if (!entry) return;
-		optimisticStartTypes.delete(id);
-		services = revertStartType(services, entry.name, entry.set, entry.previous);
 	}
 
 	function onStatusChanged(event: ServiceStatusChanged) {
